@@ -100,11 +100,11 @@ cocitation[from_cid, to_cid, count(neuron)] := *cyberlinks{neuron, from_cid, to_
 :sort -n_citations
 ```
 
-### semcon discovery — find emergent semantic conventions
+### dialect discovery — find emergent dialects
 
 ```datalog
 // particles that appear as middle nodes in many A→X→B patterns
-// (candidate semcons — structural bridges)
+// (candidate dialects — structural bridges)
 bridge_count[middle, count(pair)] := *cyberlinks{from_cid: a, to_cid: middle},
                                       *cyberlinks{from_cid: middle, to_cid: b},
                                       pair = list(a, b)
@@ -190,7 +190,7 @@ async fn find_related(particle: Particle, limit: int) -> Vec<Particle> {
 
 | neural language concept | datalog query pattern |
 |---|---|
-| [[semcon]] discovery | bridge particle detection (high betweenness) |
+| [[dialect]] discovery | bridge particle detection (high betweenness) |
 | [[sentence]] parsing | ordered cyberlink batch within transaction |
 | [[motif]] detection | subgraph pattern matching via recursive rules |
 | [[name]] resolution | deterministic lookup: latest link by neuron + path |
