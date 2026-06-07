@@ -7,8 +7,8 @@ on the nox interpreter, matching a reference, for the pure register.
 
 ## decision: write from scratch, cozo as oracle
 
-not fork-and-strip. inf's engine is written fresh in rs/inf-*, with the vendored
-rs/cozo kept only as a differential oracle.
+not fork-and-strip. inf's engine is written fresh directly in inf/rs, alongside
+the vendored rs/cozo, which is kept only as a differential oracle.
 
 why not adapt cozo-core in place:
 
@@ -34,35 +34,38 @@ cozo is the differential ORACLE throughout, never an executor we route IR into.
 two reference implementations converge (cyber multi-dimensional verification):
 
 - cozo — external oracle, checked on the integer/bounded overlapping subset.
-- inf-eval — our Rust evaluator, the canonical-semantics reference.
-- inf-nox — IR lowered to nox, run on the nox interpreter. stage 3. must match
-  inf-eval bit-for-bit; cross-checked against cozo where semantics overlap.
+- eval — our Rust evaluator, the canonical-semantics reference.
+- lower — IR lowered to nox, run on the nox interpreter. stage 3. must match
+  eval bit-for-bit; cross-checked against cozo where semantics overlap.
 
 (small update to bootstrap.md's stage-2 row to follow once approved.)
 
 ## crate layout (rs/)
 
-a cargo workspace at rs/, mirroring rune's crate map. rs/cozo stays gitignored.
+a cargo workspace at inf/rs, mirroring rune's crate map. directories are plain —
+no inf- prefix (we are already in the inf repo). rs/cozo stays gitignored and is
+excluded from the workspace (it carries its own).
 
 ```
-rs/
-  Cargo.toml            workspace
-  inf-value/            DataValue over nox atoms (field/word/hash); memcmp encoding; temp store
-  inf-ast/              AST (rules, atoms, terms) + IR (relational-algebra plan)
-  inf-lex/              tokenizer for the inf surface
-  inf-parse/            parser → AST (the pure register, grammar.md)
-  inf-plan/             AST → IR: stratify, magic-set, compile to RA (ported from cozo)
-  inf-source/           RelationSource trait + LocalSource (in-mem); BbgSource later
-  inf-eval/             semi-naive evaluator over IR + RelationSource (the reference)
-  inf-nox/              IR → nox-pattern lowering; runs on the nox interpreter
-  inf/                  CLI: run / plan / cost / check
+inf/rs/                 cargo workspace (excludes cozo/)
+  Cargo.toml
+  value/                DataValue over nox atoms (field/word/hash); memcmp; temp store
+  ast/                  AST (rules, atoms, terms) + IR (relational-algebra plan)
+  lex/                  tokenizer for the inf surface
+  parse/                parser → AST (the pure register, grammar.md)
+  plan/                 AST → IR: stratify, magic-set, compile to RA (ported from cozo)
+  source/               RelationSource trait + LocalSource (in-mem); BbgSource later
+  eval/                 semi-naive evaluator over IR + RelationSource (the reference)
+  lower/                IR → nox-pattern lowering; runs on the nox interpreter
+  cli/                  the `inf` binary: run / plan / cost / check
   cozo/                 (gitignored) — oracle, behind a feature flag
 ```
 
-dependencies: nox/rs (interpreter, for inf-nox), honeycrisp (unimem temp store,
-when the arena lands), strata/Tri for field ops. cozo oracle tests are gated
-behind a `cozo-oracle` feature requiring the local clone, so CI without cozo runs
-the inf-eval differential suite only.
+package names may carry an `inf-` prefix for crate identity; the directories stay
+plain. dependencies: nox/rs (interpreter, for `lower`), honeycrisp (unimem temp
+store, when the arena lands), strata/Tri for field ops. cozo oracle tests are
+gated behind a `cozo-oracle` feature requiring the local clone, so CI without
+cozo runs the `eval` differential suite only.
 
 ## what to port vs build fresh
 
@@ -74,9 +77,9 @@ the inf-eval differential suite only.
 | relational-algebra plan | port cozo query/ra.rs + compile.rs | our IR types |
 | semi-naive eval | port cozo query/eval.rs | bounded; over RelationSource, not StoreTx |
 | graph algorithms | port cozo fixed_rule/algos/* | arithmetic → Ten/Tri; bounded iteration counts |
-| value model | fresh | field/word/hash atoms, no float (inf-value) |
-| storage | fresh | RelationSource + temp store; no cozo storage layer |
-| nox lowering | fresh | the novel work — inf-nox |
+| value model | fresh | field/word/hash atoms, no float (`value`) |
+| storage | fresh | RelationSource + temp store; no cozo storage layer (`source`) |
+| nox lowering | fresh | the novel work (`lower`) |
 
 ## milestones
 
@@ -86,23 +89,23 @@ M0 — scaffold. workspace, crates, CI, cozo behind the `cozo-oracle` feature. a
 query corpus harness that runs a query through {cozo, inf-eval, inf-nox} and
 diffs results.
 
-M1 — value + source + temp store. inf-value (atoms, memcmp), inf-source with an
+M1 — value + source + temp store. `value` (atoms, memcmp), `source` with an
 in-mem LocalSource, a temp store (std BTree arena first; unimem arena later).
 
-M2 — front-end. inf-lex + inf-parse for the pure register → AST. parse every
-example in the specs; snapshot-test the AST.
+M2 — front-end. `lex` + `parse` for the pure register → AST. parse every example
+in the specs; snapshot-test the AST.
 
-M3 — planner. inf-plan: stratify → magic-set → IR. port from cozo, target our IR.
+M3 — planner. `plan`: stratify → magic-set → IR. port from cozo, target our IR.
 
-M4 — inf-eval (the reference). semi-naive evaluation over IR + LocalSource:
-joins, filters (Tri/Bt calls), projection, aggregation, bounded recursion, the
+M4 — `eval` (the reference). semi-naive evaluation over IR + LocalSource: joins,
+filters (Tri/Bt calls), projection, aggregation, bounded recursion, the
 fixed-rule algos. differential-test vs cozo on the integer/bounded corpus. at
 this milestone inf runs end-to-end interpretively.
 
-M5 — inf-nox (STAGE 3). lower IR → nox patterns (reads → look against the source,
+M5 — `lower` (STAGE 3). lower IR → nox patterns (reads → look against the source,
 join → compose, condition → Tri/Bt under branch, recursion → bounded compose,
 sort/limit → comparison+truncate). run on the nox interpreter. differential-test
-vs inf-eval (must match) and cozo (overlap). stage 3 lands.
+vs `eval` (must match) and cozo (overlap). stage 3 lands.
 
 ### the vertical slice (drives M0–M5)
 
@@ -137,5 +140,5 @@ shared semantics. a milestone lands only when its diff is clean.
 ## sequencing (sessions, 3h each)
 
 M0 ~0.5 · M1 ~1 · M2 ~1.5 · M3 ~2 · M4 ~3 · M5 ~3 → roughly 9–11 sessions to
-stage 3. M4 (inf-eval) is the heaviest and the highest-value: it makes inf real
-and is the reference stage 3 must match.
+stage 3. M4 (`eval`) is the heaviest and the highest-value: it makes inf real and
+is the reference stage 3 must match.
