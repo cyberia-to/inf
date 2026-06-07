@@ -26,7 +26,7 @@ is a datalog.
 
 but a query language for cyber must do one more thing no ordinary datalog does:
 it must produce a proof. an answer from the graph is worthless if you have to
-trust the node that computed it. inf answers come with a STARK that the result
+trust the node that computed it. inf answers come with a zheng proof that the result
 follows from the committed graph state. this is what makes inf a proof language
 rather than a query DSL.
 
@@ -36,7 +36,7 @@ rather than a query DSL.
 | graph algorithms | external | external | fixed rules | fixed rules → [[Ten]] |
 | aggregation | GROUP BY | GROUP BY | inline | inline, semi-lattice in recursion |
 | determinism | no | no | yes | yes, enforced |
-| proof of result | no | no | no | STARK against a [[bbg]] root |
+| proof of result | no | no | no | zheng proof against a [[bbg]] root |
 
 ## place in the fourteen
 
@@ -60,7 +60,7 @@ inf, like rune, has three execution registers separated by their proof contract.
 
 a query over a committed graph snapshot at a block. the result is a function of
 (graph_root, query, params). every read is a [[nox]] `look` against the root;
-every rule application is a constraint. the whole derivation is a STARK,
+every rule application is a constraint. the whole derivation is a zheng proof,
 unconditional. this is the proof language — the Trident-compatible core.
 
 ### reactive
@@ -95,7 +95,7 @@ place where ordinary datalog had to be narrowed.
 3. statically-known cost — `inf cost` reports a cycle ceiling before the query
    runs.
 
-hold all three and an inf program lowers query → IR → [[nox]] patterns → STARK
+hold all three and an inf program lowers query → IR → [[nox]] patterns → zheng
 like any Trident dialect.
 
 ## bounded recursion over an unbounded graph
@@ -105,13 +105,13 @@ reachability, linkchains, and transitive closure iterate until they reach a
 fixed point, and the number of rounds depends on the graph — its diameter, its
 size. a reachability query over a graph of N particles may need up to N rounds.
 
-a STARK circuit, though, has a depth fixed at compile time. these two facts look
+a zheng circuit, though, has a depth fixed at compile time. these two facts look
 like they collide: how do you compile a fixed circuit for a query whose
 iteration count grows with the graph? inf resolves it with three layers of
 bound.
 
 - capacity — compile time. the circuit compiles to a maximum depth MAX, the
-  largest graph the circuit can serve. this is the fixed bound the STARK needs.
+  largest graph the circuit can serve. this is the fixed bound zheng needs.
 - snapshot bound — proof time. the graph root commits to the graph's size
   (node_count) and, where available, its diameter. that committed value is the
   worst-case iteration count for this snapshot. because it is a committed public
@@ -194,7 +194,7 @@ inf query
   → parse + stratify + magic-set rewrite      (which relations, in what order)
   → query-plan IR                              (relational algebra; the Trident TIR analog)
   → nox patterns                               (joins/scans → look; recursion → bounded compose)
-  → STARK                                      (via the trident → zheng pipeline)
+  → zheng                                      (via the trident → zheng pipeline)
 ```
 
 relation reads become the `look` pattern (deterministic bbg read). recursion
@@ -215,7 +215,7 @@ against a reference floor.
    CozoDB.
 3. the query-plan IR lowers to Nox patterns; execution moves to the Nox
    interpreter.
-4. native Nox execution with STARK proofs via Trident. CozoDB removed.
+4. native Nox execution with zheng proofs via Trident. CozoDB removed.
 
 the anti-pattern to avoid throughout: treating CozoDB's executor semantics as
 the design. CozoDB is the scaffold, not the building. inf-pure is defined by the

@@ -17,7 +17,7 @@ defines.
 
 inf is a proof language. its pure subset satisfies [[trident]]'s three
 constitutional constraints, so an inf program lowers query → IR → [[nox]]
-patterns → STARK like any Trident dialect:
+patterns → zheng like any Trident dialect:
 
 1. bounded execution — recursion is bounded fixed-point iteration with a
    static depth bound. no general recursion.

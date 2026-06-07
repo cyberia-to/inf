@@ -10,7 +10,7 @@ the question language of the [[cybergraph]]. inf asks; [[rune]] answers by actin
 
 inf is proof language #10 of 14 (Infer — Horn clauses). where [[rune]] writes
 the graph, inf reads and reasons over it. a query is a set of rules; the answer
-returns with a STARK proof that it follows from the committed graph state. ask
+returns with a zheng proof that it follows from the committed graph state. ask
 once, verify forever.
 
 ```datalog
@@ -27,7 +27,7 @@ once, verify forever.
   aggregation, graph algorithms.
 - provable — the pure register satisfies [[trident]]'s three constraints
   (bounded recursion, determinism, static cost), lowers to [[nox]] patterns, and
-  produces a STARK. every result certifies against a [[bbg]] root.
+  produces a zheng proof. every result certifies against a [[bbg]] root.
 - exact — values are field elements, never floats. arithmetic delegates to
   siblings: [[Trident|Tri]] (field), [[Rs]] (bytes), [[Bt]] (bits),
   [[Ten]] (vectors).
@@ -37,7 +37,7 @@ once, verify forever.
 
 | register | reads | proof |
 |---|---|---|
-| pure | committed graph snapshot | unconditional STARK |
+| pure | committed graph snapshot | unconditional zheng |
 | reactive | graph mutations (`subscribe`) | conditional on the event log |
 | live | external systems | witness-based |
 

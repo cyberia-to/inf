@@ -13,7 +13,7 @@ where Rune mutates the cybergraph, INF queries and reasons over it.
 CozoDB is to INF what Rust is to Trident: a bootstrap that SHRINKS to zero.
 the end-state is not "forked CozoDB" — it is a proof language whose pure
 subset is a sub-grammar of Trident, lowering query → IR → Nox patterns →
-STARK via the Trident pipeline. do not carry CozoDB's executor semantics into
+zheng via the Trident pipeline. do not carry CozoDB's executor semantics into
 the language design.
 
 ## the Trident contract (drives every decision)
@@ -31,14 +31,14 @@ each is also where cozo diverges and must be redesigned, not ported:
    execution (mirrors Trident `--cost`). cozo's planner is runtime-adaptive →
    build a static cost model over query shape + graph statistics.
 
-if all three hold, an INF program lowers through IR → Nox → STARK like any
+if all three hold, an INF program lowers through IR → Nox → zheng like any
 Trident dialect.
 
 ## registers (mirror Rune's pure / reactive / host)
 
 | register | data source | proof | note |
 |---|---|---|---|
-| pure / static | committed BBG-root snapshot (Nox `look` + Lens) | unconditional STARK | the Trident-compatible core; pure subset = Trident sub-grammar |
+| pure / static | committed BBG-root snapshot (Nox `look` + Lens) | unconditional zheng | the Trident-compatible core; pure subset = Trident sub-grammar |
 | reactive | cybergraph `subscribe` (mutation events) | conditional on event log | analog of Rune `hint`; needs own opcode (`watch`?) |
 | live | external / federated / content via radio | witness-based | analog of Rune `host` |
 | (bootstrap) | cozo-local | none | NOT a language register — dev/test harness; shrinks away |
@@ -89,7 +89,7 @@ size, verification time. references/ = ground truth, baselines/ = hand floor.
 2. parse via INF lexer/parser → query-plan IR → execute via CozoDB.
 3. query-plan IR → Nox patterns (joins/scans/bounded fixpoints as Nox loops)
    → execute on the Nox interpreter.
-4. native Nox execution + STARK via Trident. CozoDB removed.
+4. native Nox execution + zheng via Trident. CozoDB removed.
 
 ## spec set (mirror trident/ and rune/ specs/ — INF is a sibling language)
 
@@ -103,7 +103,7 @@ brief said reference/, but those repos use specs/ — flagged).
 3. specs/cost.md — static cost model: cycles from query shape + graph stats.
    NEW; Trident constraint #3.
 4. specs/proof.md — proof contract: result certifies against a BBG root;
-   Lens opening for a multi-row result set; derivation-trace → STARK.
+   Lens opening for a multi-row result set; derivation-trace → zheng.
 5. specs/ir.md — query-plan IR + Nox-pattern lowering (the TIR analog).
    merges v1's ir + circuit.
 6. specs/extensions.md — reactive (`subscribe`) + live; their proof contracts

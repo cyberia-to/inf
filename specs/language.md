@@ -21,7 +21,7 @@ this file specifies the pure register. the other two are in
 
 | register | reads | proof | trident |
 |---|---|---|---|
-| pure (static) | committed snapshot at a graph root | unconditional STARK | the sub-grammar |
+| pure (static) | committed snapshot at a graph root | unconditional zheng | the sub-grammar |
 | reactive | `subscribe` to mutations | conditional on event log | outside |
 | live | external / federated / content | witness-based | outside |
 
@@ -134,12 +134,12 @@ a recursive rule is a bounded fixed-point iteration. inf forbids general
 recursion: a rule whose depth cannot be bounded is rejected at compile time.
 
 the iteration count of a graph query depends on the graph — its diameter, its
-size. a reachability query over N particles may need up to N rounds. a STARK
+size. a reachability query over N particles may need up to N rounds. a zheng
 circuit, though, has a depth fixed at compile time. inf reconciles these with
 three layers of bound.
 
 - capacity (compile time). the circuit compiles to a maximum depth MAX — the
-  largest graph it can serve. this is the fixed bound the STARK requires.
+  largest graph it can serve. this is the fixed bound zheng requires.
 - snapshot bound (proof time). the graph root commits `node_count` and, where
   available, `diameter_bound` (see [cost](cost.md)). this committed value is the
   worst-case iteration count for the snapshot. because it is a committed public
