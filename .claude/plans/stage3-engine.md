@@ -86,7 +86,7 @@ cozo runs the `eval` differential suite only.
 a thin vertical slice reaches stage 3 first; breadth follows.
 
 M0 — scaffold. workspace, crates, CI, cozo behind the `cozo-oracle` feature. a
-query corpus harness that runs a query through {cozo, inf-eval, inf-nox} and
+query corpus harness that runs a query through {cozo, eval, lower} and
 diffs results.
 
 M1 — value + source + temp store. `value` (atoms, memcmp), `source` with an
@@ -116,7 +116,7 @@ vs `eval` (must match) and cozo (overlap). stage 3 lands.
 ```
 
 two-relation join + a Tri condition + sort + limit, no recursion, over a
-LocalSource fixture. once this runs on the nox interpreter and matches inf-eval,
+LocalSource fixture. once this runs on the nox interpreter and matches eval,
 the path exists; then broaden to bounded recursion (reachability), aggregation
 (count/sum), a fixed rule (PageRank), and mutation derivation (`:link` → the
 cyberlink batch a signal would carry).
@@ -125,7 +125,7 @@ cyberlink batch a signal would carry).
 
 per cyber/engineering and bootstrap.md: each milestone publishes correctness and,
 from M5, cost. references/ holds the ground-truth corpus (query + expected rows);
-the harness asserts cozo == inf-eval == inf-nox on every corpus entry within the
+the harness asserts cozo == eval == lower on every corpus entry within the
 shared semantics. a milestone lands only when its diff is clean.
 
 ## risks
@@ -135,7 +135,7 @@ shared semantics. a milestone lands only when its diff is clean.
 - nox `look` over a non-bbg source. mitigation: M5 uses a look-handler over the
   LocalSource; bbg wiring is a later source, not a stage-3 blocker.
 - field-element vs cozo float divergence narrows the shared corpus. mitigation:
-  inf-eval is the primary reference; cozo is a secondary check on integer queries.
+  eval is the primary reference; cozo is a secondary check on integer queries.
 
 ## sequencing (sessions, 3h each)
 
