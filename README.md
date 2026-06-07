@@ -20,6 +20,17 @@ two things, both set-based, both proven.
 
 ## ask — provable answers
 
+the cybergraph is a planetary memory — every idea a [[particle]], every claim a
+[[cyberlink]], every mind a [[neuron]] — and inf lets you ask it the questions
+that matter. what does the graph hold most important here, and how did that shift
+as the world learned? which ideas bridge two fields that rarely meet? what is the
+shortest chain of reasoning from this claim to that one? who shaped this concept,
+and what did they stake on it? which schools of thought are forming, which are
+dissolving, and is this whole region of knowledge free of contradiction? these
+are questions you could once only answer by trusting whoever ran them — inf
+answers them against a 32-byte root, so the answer travels anywhere and convinces
+anyone.
+
 ```datalog
 // discovery — the 20 particles I linked, ranked by focus
 ?[particle, score] := cyberlinks{neuron: @me, to: particle},
