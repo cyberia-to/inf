@@ -127,6 +127,16 @@ fn negation_finds_unlinked_under_topic() {
 }
 
 #[test]
+fn underscore_temp_relation_usable_by_later_rules() {
+    // a `_`-prefixed helper relation is an intra-program temp, visible downstream
+    let out = run("_hot[x] := focus{particle: x, score}, gt(score, 10)\n?[x] := _hot[x]");
+    let got: std::collections::BTreeSet<Tuple> = out.rows.iter().cloned().collect();
+    let want: std::collections::BTreeSet<Tuple> =
+        [vec![p("a")], vec![p("b")]].into_iter().collect(); // focus > 10: a(30), b(20)
+    assert_eq!(got, want);
+}
+
+#[test]
 fn assert_none_passes_when_invariant_holds() {
     // no neuron has negative karma
     let out = run("?[neuron, k] := karma{neuron, k}, lt(k, 0)\n:assert none");

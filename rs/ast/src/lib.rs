@@ -111,6 +111,29 @@ pub enum Mutation {
     Rm { rel: String, binds: Binds },
 }
 
+/// An I/O declaration direction.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Dir {
+    In,
+    Out,
+}
+
+/// A declared type in a `pub input/output` declaration.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Type {
+    Named(String),
+    Array(Box<Type>, u64),
+    Record(Vec<(String, Type)>),
+}
+
+/// A program I/O declaration: `pub input graph_root : Particle`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Decl {
+    pub dir: Dir,
+    pub name: String,
+    pub ty: Type,
+}
+
 /// A program-level option applied to the entry relation.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Opt {
@@ -124,6 +147,7 @@ pub enum Opt {
 /// A parsed program.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Program {
+    pub decls: Vec<Decl>,
     pub rules: Vec<Rule>,
     pub mutation: Option<Mutation>,
     pub opts: Vec<Opt>,
@@ -195,6 +219,7 @@ mod tests {
                     fixed: None,
                 },
             ],
+            decls: vec![],
             mutation: None,
             opts: vec![Opt::Limit(20)],
         };

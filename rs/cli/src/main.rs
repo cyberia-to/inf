@@ -112,24 +112,37 @@ fn cmd_cost(src: &str) -> i32 {
             64
         }
     };
-    let mut total: u64 = 0;
+    let mut reads = 0u64;
+    let mut combine = 0u64;
+    let mut total = 0u64;
+    let mut max_rounds = 1u64;
     for s in &ir.strata {
         let rounds = if s.recursive { s.bound.unwrap_or(16) } else { 1 };
-        let mut stratum_cost = 0u64;
+        max_rounds = max_rounds.max(rounds);
+        let (mut sr, mut sc) = (0u64, 0u64);
         for r in &s.rules {
             if let Some(f) = &r.fixed {
-                stratum_cost += size(&f.edges).saturating_mul(8); // algo over edges
+                sr = sr.saturating_add(size(&f.edges));
+                sc = sc.saturating_add(size(&f.edges).saturating_mul(7)); // algorithm core
             } else {
+                let mut natoms = 0u64;
                 for a in &r.body {
                     if let Some(rel) = a.rel_name() {
-                        stratum_cost = stratum_cost.saturating_add(size(rel));
+                        sr = sr.saturating_add(size(rel));
+                        natoms += 1;
                     }
                 }
+                sc = sc.saturating_add(natoms.saturating_sub(1).saturating_mul(4)); // joins
             }
         }
-        total = total.saturating_add(rounds.saturating_mul(stratum_cost));
+        reads = reads.saturating_add(sr);
+        combine = combine.saturating_add(sc);
+        total = total.saturating_add(rounds.saturating_mul(sr.saturating_add(sc)));
     }
-    println!("estimated work: ~{total} units (read+combine, rounds folded in)");
+    println!("estimated work: ~{total} units");
+    println!("  reads:     {reads}  (Lens openings / scans — bbg side)");
+    println!("  combine:   {combine}  (joins + algorithm cores — inf side)");
+    println!("  recursion: up to ×{max_rounds} on recursive strata");
     0
 }
 

@@ -78,6 +78,10 @@ impl Parser {
     }
 
     fn program(&mut self) -> Result<Program, ParseError> {
+        let mut decls = Vec::new();
+        while self.peek() == Some(&Tok::Ident("pub".into())) {
+            decls.push(self.decl()?);
+        }
         let mut rules = Vec::new();
         while self.starts_rule() {
             rules.push(self.rule()?);
@@ -123,7 +127,60 @@ impl Parser {
         if self.pos < self.toks.len() {
             return self.err(format!("unexpected trailing token {:?}", self.peek()));
         }
-        Ok(Program { rules, mutation, opts })
+        Ok(Program { decls, rules, mutation, opts })
+    }
+
+    fn decl(&mut self) -> Result<Decl, ParseError> {
+        self.expect_ident("pub")?;
+        let dir = match self.ident()?.as_str() {
+            "input" => Dir::In,
+            "output" => Dir::Out,
+            other => return self.err(format!("expected input|output after `pub`, found {other}")),
+        };
+        let name = self.ident()?;
+        self.expect(&Tok::Colon)?;
+        let ty = self.ty()?;
+        Ok(Decl { dir, name, ty })
+    }
+
+    fn expect_ident(&mut self, want: &str) -> Result<(), ParseError> {
+        let got = self.ident()?;
+        if got == want {
+            Ok(())
+        } else {
+            self.err(format!("expected `{want}`, found `{got}`"))
+        }
+    }
+
+    fn ty(&mut self) -> Result<Type, ParseError> {
+        match self.peek().cloned() {
+            Some(Tok::LBracket) => {
+                self.bump();
+                let inner = self.ty()?;
+                self.expect(&Tok::Semi)?;
+                let n = self.uint()?;
+                self.expect(&Tok::RBracket)?;
+                Ok(Type::Array(Box::new(inner), n))
+            }
+            Some(Tok::LBrace) => {
+                self.bump();
+                let mut fields = Vec::new();
+                if self.peek() != Some(&Tok::RBrace) {
+                    loop {
+                        let name = self.ident()?;
+                        self.expect(&Tok::Colon)?;
+                        fields.push((name, self.ty()?));
+                        if !self.eat(&Tok::Comma) {
+                            break;
+                        }
+                    }
+                }
+                self.expect(&Tok::RBrace)?;
+                Ok(Type::Record(fields))
+            }
+            Some(Tok::Ident(_)) => Ok(Type::Named(self.ident()?)),
+            other => self.err(format!("expected a type, found {other:?}")),
+        }
     }
 
     fn starts_rule(&self) -> bool {
@@ -480,6 +537,29 @@ mod tests {
         let b = &p.rules[0].body;
         assert!(matches!(b[1], Atom::Not(_)));
         assert!(matches!(b[2], Atom::Bind { .. }));
+    }
+
+    #[test]
+    fn declarations() {
+        let p = parse(
+            "pub input graph_root : Particle\npub output result : Relation\n?[x] := axons{from: x, to: x}",
+        )
+        .unwrap();
+        assert_eq!(p.decls.len(), 2);
+        assert_eq!(p.decls[0].dir, Dir::In);
+        assert_eq!(p.decls[0].name, "graph_root");
+        assert_eq!(p.decls[1].name, "result");
+        assert_eq!(p.rules.len(), 1);
+    }
+
+    #[test]
+    fn declaration_types() {
+        let p = parse(
+            "pub input ks : [Field; 4]\npub input params : { a: Field, b: Particle }\n?[x] := r{col: x}",
+        )
+        .unwrap();
+        assert!(matches!(p.decls[0].ty, Type::Array(_, 4)));
+        assert!(matches!(p.decls[1].ty, Type::Record(_)));
     }
 
     #[test]

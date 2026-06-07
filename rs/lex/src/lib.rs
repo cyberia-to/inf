@@ -20,6 +20,7 @@ pub enum Tok {
     RParen,
     Comma,
     Colon,
+    Semi,
     Dot,
     Eq,
     Plus,
@@ -86,7 +87,7 @@ pub fn lex(src: &str) -> Result<Vec<Spanned>, LexError> {
                 out.push(Spanned { tok: Tok::FixedArrow, line: sl, col: sc });
                 advance(&mut i, &mut line, &mut col, 2);
             }
-            '[' | ']' | '{' | '}' | '(' | ')' | ',' | ':' | '.' | '=' | '+' | '-' | '*'
+            '[' | ']' | '{' | '}' | '(' | ')' | ',' | ':' | ';' | '.' | '=' | '+' | '-' | '*'
             | '#' | '@' | '~' | '?' => {
                 let t = match c {
                     '[' => Tok::LBracket,
@@ -97,6 +98,7 @@ pub fn lex(src: &str) -> Result<Vec<Spanned>, LexError> {
                     ')' => Tok::RParen,
                     ',' => Tok::Comma,
                     ':' => Tok::Colon,
+                    ';' => Tok::Semi,
                     '.' => Tok::Dot,
                     '=' => Tok::Eq,
                     '+' => Tok::Plus,
