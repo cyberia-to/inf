@@ -9,8 +9,9 @@ pub enum Tok {
     Ident(String),
     Int(i64),
     Str(String),
-    Assign,   // :=
-    Question, // ?
+    Assign,     // :=
+    FixedArrow, // <~
+    Question,   // ?
     LBracket,
     RBracket,
     LBrace,
@@ -79,6 +80,10 @@ pub fn lex(src: &str) -> Result<Vec<Spanned>, LexError> {
             }
             ':' if i + 1 < b.len() && b[i + 1] == '=' => {
                 out.push(Spanned { tok: Tok::Assign, line: sl, col: sc });
+                advance(&mut i, &mut line, &mut col, 2);
+            }
+            '<' if i + 1 < b.len() && b[i + 1] == '~' => {
+                out.push(Spanned { tok: Tok::FixedArrow, line: sl, col: sc });
                 advance(&mut i, &mut line, &mut col, 2);
             }
             '[' | ']' | '{' | '}' | '(' | ')' | ',' | ':' | '.' | '=' | '+' | '-' | '*'

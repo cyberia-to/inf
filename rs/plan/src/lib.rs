@@ -96,6 +96,14 @@ pub fn plan(prog: &Program) -> Result<IrProgram, PlanError> {
 fn derived_deps(r: &Rule, derived: &HashSet<String>) -> Vec<(String, bool)> {
     let base_strict = r.head.has_aggr() || r.head.name.is_none();
     let mut out = Vec::new();
+    if let Some(f) = &r.fixed {
+        // a fixed rule consumes the whole edges relation, so it must be strictly
+        // above it
+        if derived.contains(&f.edges) {
+            out.push((f.edges.clone(), true));
+        }
+        return out;
+    }
     for a in &r.body {
         match a {
             Atom::Read { rel, .. } | Atom::Apply { rule: rel, .. } => {
@@ -155,6 +163,9 @@ fn positive_vars(r: &Rule) -> HashSet<String> {
 }
 
 fn check_safety(r: &Rule) -> Result<(), PlanError> {
+    if r.fixed.is_some() {
+        return Ok(()); // a fixed rule binds its head from the algorithm output
+    }
     let bound = positive_vars(r);
     // range restriction: every head variable must be positively bound
     for ha in &r.head.args {

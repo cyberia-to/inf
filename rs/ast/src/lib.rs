@@ -82,12 +82,24 @@ impl Head {
     }
 }
 
-/// A rule: `head := body` (with an optional explicit recursion bound).
+/// A fixed-rule (`<~`) invocation: a built-in graph algorithm over an edges
+/// relation, with named parameters and positional arguments (specs/algorithms.md).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Fixed {
+    pub algo: String,
+    pub edges: String,
+    pub params: Vec<(String, Term)>,
+    pub pos: Vec<Term>,
+}
+
+/// A rule. Either an inline rule (`head := body`) with an optional recursion
+/// bound, or a fixed rule (`head <~ Algo(..)`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rule {
     pub head: Head,
     pub body: Vec<Atom>,
     pub bound: Option<u64>,
+    pub fixed: Option<Fixed>,
 }
 
 /// A canonical or temp-relation mutation.
@@ -174,11 +186,13 @@ mod tests {
                     head: Head { name: Some("r".into()), args: vec![HeadArg::Var("x".into())] },
                     body: vec![],
                     bound: None,
+                    fixed: None,
                 },
                 Rule {
                     head: Head { name: None, args: vec![HeadArg::Var("x".into())] },
                     body: vec![Atom::Apply { rule: "r".into(), args: vec![Term::Var("x".into())] }],
                     bound: None,
+                    fixed: None,
                 },
             ],
             mutation: None,

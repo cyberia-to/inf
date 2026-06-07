@@ -5,6 +5,7 @@
 
 mod agg;
 mod expr;
+mod fixed;
 
 pub use expr::Ctx;
 
@@ -94,16 +95,28 @@ fn eval_stratum(
 
     let mut rounds = 0usize;
     loop {
+        let mut changed = false;
         let mut binds_by_head: BTreeMap<String, (Head, Vec<Binding>)> = BTreeMap::new();
         for r in &stratum.rules {
-            let bs = eval_body(r, env, src, ctx)?;
-            let e = binds_by_head
-                .entry(head_rel(r))
-                .or_insert_with(|| (r.head.clone(), Vec::new()));
-            e.1.extend(bs);
+            if let Some(f) = &r.fixed {
+                let edges = rows_of(&f.edges, env, src)?.1;
+                let tuples =
+                    fixed::run(f, &r.head, &edges, ctx).map_err(|m| EvalError { msg: m })?;
+                let new: Relation = tuples.into_iter().collect();
+                let slot = env.get_mut(&head_rel(r)).unwrap();
+                if slot.1 != new {
+                    slot.1 = new;
+                    changed = true;
+                }
+            } else {
+                let bs = eval_body(r, env, src, ctx)?;
+                let e = binds_by_head
+                    .entry(head_rel(r))
+                    .or_insert_with(|| (r.head.clone(), Vec::new()));
+                e.1.extend(bs);
+            }
         }
 
-        let mut changed = false;
         for (rel, (head, binds)) in binds_by_head {
             let cols = head_cols(&head);
             if head.has_aggr() {

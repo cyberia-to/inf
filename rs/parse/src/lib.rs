@@ -143,6 +143,10 @@ impl Parser {
 
     fn rule(&mut self) -> Result<Rule, ParseError> {
         let head = self.head()?;
+        if self.eat(&Tok::FixedArrow) {
+            let fixed = self.fixed_call()?;
+            return Ok(Rule { head, body: vec![], bound: None, fixed: Some(fixed) });
+        }
         self.expect(&Tok::Assign)?;
         let body = self.body()?;
         let mut bound = None;
@@ -152,7 +156,48 @@ impl Parser {
             self.bump();
             bound = Some(self.uint()?);
         }
-        Ok(Rule { head, body, bound })
+        Ok(Rule { head, body, bound, fixed: None })
+    }
+
+    /// `Algo( edges[], key: term, posarg, .. )`
+    fn fixed_call(&mut self) -> Result<Fixed, ParseError> {
+        let algo = self.ident()?;
+        self.expect(&Tok::LParen)?;
+        let mut edges = None;
+        let mut params = Vec::new();
+        let mut pos = Vec::new();
+        if self.peek() != Some(&Tok::RParen) {
+            loop {
+                let is_rel = matches!(self.peek(), Some(Tok::Ident(_)))
+                    && self.peek2() == Some(&Tok::LBracket);
+                let is_param = matches!(self.peek(), Some(Tok::Ident(_)))
+                    && self.peek2() == Some(&Tok::Colon);
+                if is_rel {
+                    let name = self.ident()?;
+                    self.expect(&Tok::LBracket)?;
+                    self.expect(&Tok::RBracket)?;
+                    if edges.is_none() {
+                        edges = Some(name);
+                    }
+                } else if is_param {
+                    let key = self.ident()?;
+                    self.expect(&Tok::Colon)?;
+                    params.push((key, self.expr()?));
+                } else {
+                    pos.push(self.expr()?);
+                }
+                if !self.eat(&Tok::Comma) {
+                    break;
+                }
+            }
+        }
+        self.expect(&Tok::RParen)?;
+        let edges = edges.ok_or_else(|| ParseError {
+            msg: format!("fixed rule `{algo}` needs an edges relation argument, e.g. `edges[]`"),
+            line: 0,
+            col: 0,
+        })?;
+        Ok(Fixed { algo, edges, params, pos })
     }
 
     fn head(&mut self) -> Result<Head, ParseError> {

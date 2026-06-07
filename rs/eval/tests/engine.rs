@@ -158,6 +158,50 @@ fn mutation_derives_link_batch() {
 }
 
 #[test]
+fn fixed_rule_dijkstra_shortest_path() {
+    let out = run(
+        "edges[from, to, w] := axons{from, to, weight_sum: w}\n?[path, cost] <~ ShortestPathDijkstra(edges[], #seed, #c)",
+    );
+    assert_eq!(out.rows.len(), 1);
+    let path = col(&out, "path");
+    let cost = col(&out, "cost");
+    assert_eq!(out.rows[0][cost], Value::int(17)); // 10 + 5 + 2
+    assert_eq!(
+        out.rows[0][path],
+        Value::List(vec![p("seed"), p("a"), p("b"), p("c")])
+    );
+}
+
+#[test]
+fn fixed_rule_connected_components_one_component() {
+    let out = run("edges[from, to] := axons{from, to}\n?[node, comp] <~ ConnectedComponents(edges[])");
+    assert_eq!(out.rows.len(), 5); // seed, a, b, c, d
+    let comp = col(&out, "comp");
+    let first = out.rows[0][comp].clone();
+    assert!(out.rows.iter().all(|r| r[comp] == first), "all in one component");
+}
+
+#[test]
+fn fixed_rule_degree_centrality() {
+    let out = run("edges[from, to] := axons{from, to}\n?[node, deg, ind, outd] <~ DegreeCentrality(edges[])");
+    let node = col(&out, "node");
+    let outd = col(&out, "outd");
+    let row = out.rows.iter().find(|r| r[node] == p("seed")).unwrap();
+    assert_eq!(row[outd], Value::int(2)); // seed → a, seed → d
+}
+
+#[test]
+fn fixed_rule_pagerank_deterministic_and_positive() {
+    let q = "edges[from, to] := axons{from, to}\n?[node, rank] <~ PageRank(edges[], iters: 30)";
+    let out = run(q);
+    assert_eq!(out.rows.len(), 5);
+    let rank = col(&out, "rank");
+    assert!(out.rows.iter().all(|r| r[rank].as_int().unwrap() > 0), "ranks positive");
+    // deterministic: same query, same result
+    assert_eq!(run(q).rows, out.rows);
+}
+
+#[test]
 fn infix_arithmetic_in_bind() {
     let out = run("?[to, boosted] := axons{from: #seed, to, weight_sum: w}, boosted = w * 2");
     let b = col(&out, "boosted");
