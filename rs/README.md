@@ -51,7 +51,7 @@ cargo run -p inf-cli -- cost query.inf
 | cost.md | partial | `inf cost` reports a static estimate with a reads/combine/recursion breakdown over the IR and source sizes; the full committed-GraphStats model needs bbg. |
 | ir.md | partial | IR (strata) implemented; nox lowering implemented for the expression layer (real nox VM); full relational lowering (look-scans, compose-joins, bounded-compose recursion) planned. |
 | proof.md | planned | stage 4 (zheng proofs). |
-| extensions.md | planned | reactive (`subscribe`) and live. |
+| extensions.md | implemented | reactive (`:subscribe` + `eval_reactive` event driver) and live (`Host.fn(..)` witness via a host provider); their event-log/witness-conditional proofs come with R2 (zheng). |
 | bootstrap.md | stage 2 complete | parse→IR→eval is the working reference engine; stage 3 = expression lowering on real nox; stages 3-remainder and 4 planned. cozo differential oracle wired (rs/oracle). |
 
 ## verification

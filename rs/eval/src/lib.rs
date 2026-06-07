@@ -69,6 +69,16 @@ pub fn eval_const_term(t: &Term) -> Result<Value, EvalError> {
     expr::eval_term(t, &Default::default(), &Ctx::default()).map_err(|m| EvalError { msg: m })
 }
 
+/// Evaluate a term with integer columns bound by name — the reference value for
+/// the nox lowering's relational differential tests.
+pub fn eval_term_in(t: &Term, cols: &[String], ints: &[i64]) -> Result<Value, EvalError> {
+    let mut b = expr::Binding::new();
+    for (c, v) in cols.iter().zip(ints) {
+        b.insert(c.clone(), Value::Int(*v));
+    }
+    expr::eval_term(t, &b, &Ctx::default()).map_err(|m| EvalError { msg: m })
+}
+
 /// A mutation event for the reactive register: a tuple appended to a relation.
 #[derive(Clone, Debug)]
 pub struct Event {

@@ -34,24 +34,66 @@ fn opcode(func: &str) -> Option<u64> {
     })
 }
 
-/// Lower a closed inf term into a nox formula noun.
-fn lower_term(o: &mut Order<N>, t: &Term) -> Result<NounId, LowerError> {
+/// Lower an inf term into a nox formula noun. Variables resolve to a column of
+/// the subject tuple via the `[0 axis]` (axis) pattern; `cols` is the tuple
+/// schema (empty for a closed expression).
+fn lower_term(o: &mut Order<N>, t: &Term, cols: &[String]) -> Result<NounId, LowerError> {
     match t {
         Term::Int(i) if *i >= 0 => quote(o, *i as u64),
         Term::Field(u) => quote(o, *u),
+        Term::Var(v) => {
+            let idx = cols
+                .iter()
+                .position(|c| c == v)
+                .ok_or_else(|| LowerError::Unsupported(format!("variable `{v}`")))?;
+            // column i of a right-nested cons-list sits at axis 2^(i+2) − 2
+            let axis = (1u64 << (idx + 2)) - 2;
+            let zero = o.atom(Goldilocks::new(0), Tag::Field).ok_or(LowerError::Arena)?;
+            let ax = o.atom(Goldilocks::new(axis), Tag::Field).ok_or(LowerError::Arena)?;
+            o.cell(zero, ax).ok_or(LowerError::Arena)
+        }
         Term::Call(c) if c.sibling.is_none() => {
             let op = opcode(&c.func)
                 .ok_or_else(|| LowerError::Unsupported(format!("operator `{}`", c.func)))?;
             if c.args.len() != 2 {
                 return Err(LowerError::Unsupported(format!("`{}` arity", c.func)));
             }
-            let a = lower_term(o, &c.args[0])?;
-            let b = lower_term(o, &c.args[1])?;
+            let a = lower_term(o, &c.args[0], cols)?;
+            let b = lower_term(o, &c.args[1], cols)?;
             let body = o.cell(a, b).ok_or(LowerError::Arena)?;
             let tag = o.atom(Goldilocks::new(op), Tag::Field).ok_or(LowerError::Arena)?;
             o.cell(tag, body).ok_or(LowerError::Arena)
         }
         other => Err(LowerError::Unsupported(format!("{other:?}"))),
+    }
+}
+
+/// Build a subject tuple noun: a right-nested cons-list of the column values.
+fn tuple_noun(o: &mut Order<N>, tuple: &[i64]) -> Result<NounId, LowerError> {
+    let mut acc = o.atom(Goldilocks::new(0), Tag::Field).ok_or(LowerError::Arena)?; // terminator
+    for &v in tuple.iter().rev() {
+        let val = o.atom(Goldilocks::new(v as u64), Tag::Field).ok_or(LowerError::Arena)?;
+        acc = o.cell(val, acc).ok_or(LowerError::Arena)?;
+    }
+    Ok(acc)
+}
+
+/// Lower an expression over tuple columns and run it on the nox VM with the tuple
+/// as the subject. This is the relational lowering's value layer: query
+/// expressions execute on the real nox VM over actual relation data.
+pub fn lower_and_run_tuple(t: &Term, cols: &[String], tuple: &[i64]) -> Result<u64, LowerError> {
+    let mut o: Order<N> = Order::new();
+    let formula = lower_term(&mut o, t, cols)?;
+    let subject = tuple_noun(&mut o, tuple)?;
+    let calls = nox::NullCalls;
+    let mut tracer = nox::NoTrace;
+    match reduce(&mut o, subject, formula, BUDGET, &calls, &mut tracer) {
+        Outcome::Ok(id, _) => {
+            let (g, _) = o.atom_value(id).ok_or(LowerError::Runtime("non-atom result".into()))?;
+            Ok(g.as_u64())
+        }
+        Outcome::Halt(_) => Err(LowerError::Runtime("halted".into())),
+        Outcome::Error(e) => Err(LowerError::Runtime(format!("{e:?}"))),
     }
 }
 
@@ -66,7 +108,7 @@ fn quote(o: &mut Order<N>, v: u64) -> Result<NounId, LowerError> {
 /// element result.
 pub fn lower_and_run(t: &Term) -> Result<u64, LowerError> {
     let mut o: Order<N> = Order::new();
-    let formula = lower_term(&mut o, t)?;
+    let formula = lower_term(&mut o, t, &[])?;
     let object = o.atom(Goldilocks::new(0), Tag::Field).ok_or(LowerError::Arena)?;
     let calls = nox::NullCalls;
     let mut tracer = nox::NoTrace;
@@ -91,6 +133,9 @@ mod tests {
     fn int(i: i64) -> Term {
         Term::Int(i)
     }
+    fn var(v: &str) -> Term {
+        Term::Var(v.into())
+    }
 
     /// The differential test: nox result == reference engine result (as a field
     /// element) for arithmetic expressions.
@@ -114,6 +159,27 @@ mod tests {
         assert_matches(&call("add", call("mul", int(2), int(3)), int(4)));
         // deeper: ((5 + 5) * 2) - 1
         assert_matches(&call("sub", call("mul", call("add", int(5), int(5)), int(2)), int(1)));
+    }
+
+    #[test]
+    fn tuple_columns_lower_and_run_on_nox() {
+        // expressions over relation-tuple columns, read from the nox subject by
+        // axis, computed on the real nox VM, matching the reference engine.
+        fn check(t: &Term, cols: &[&str], tuple: &[i64]) {
+            let cs: Vec<String> = cols.iter().map(|s| s.to_string()).collect();
+            let nox_val = lower_and_run_tuple(t, &cs, tuple).expect("lower+run");
+            let reference = inf_eval::eval_term_in(t, &cs, tuple).expect("eval");
+            let want = match reference {
+                inf_value::Value::Int(i) => (i as u128 % inf_value::P as u128) as u64,
+                inf_value::Value::Field(f) => f.val(),
+                other => panic!("non-numeric reference {other:?}"),
+            };
+            assert_eq!(nox_val, want, "nox vs reference for {t:?}");
+        }
+        // a*b + c over [a=10, b=3, c=7] = 37
+        check(&call("add", call("mul", var("a"), var("b")), var("c")), &["a", "b", "c"], &[10, 3, 7]);
+        // (x + y) * x over [x=5, y=2] = 35
+        check(&call("mul", call("add", var("x"), var("y")), var("x")), &["x", "y"], &[5, 2]);
     }
 
     #[test]
