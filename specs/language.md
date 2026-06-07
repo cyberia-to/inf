@@ -140,12 +140,13 @@ three layers of bound.
 
 - capacity (compile time). the circuit compiles to a maximum depth MAX — the
   largest graph it can serve. this is the fixed bound zheng requires.
-- snapshot bound (proof time). the graph root commits `node_count` and, where
-  available, `diameter_bound` (see [cost](cost.md)). this committed value is the
-  worst-case iteration count for the snapshot. because it is a committed public
-  input, the bound is known before the query runs — static — even though it
-  scales with the graph. a query whose snapshot bound exceeds MAX is rejected;
-  it needs a larger circuit.
+- snapshot bound (proof time). the graph root commits `diameter_bound` (bbg
+  commits `node_count − 1` by default, or a tighter tru-proven bound), alongside
+  `node_count` and `relation_sizes` (see [[bbg/specs/statistics]] and
+  [cost](cost.md)). the committed bound is the worst-case iteration count for the
+  snapshot. because it is a committed public input, the bound is known before the
+  query runs — static — even though it scales with the graph. a query whose
+  snapshot bound exceeds MAX is rejected; it needs a larger circuit.
 - fixpoint (run time). semi-naive evaluation reaches the actual fixed point at
   round K ≤ diameter ≤ node_count.
 

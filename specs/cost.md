@@ -32,24 +32,26 @@ bbg provides two things to the cost model. both must be committed in the graph
 root so the reported cost is verifiable, not trusted.
 
 ```
-bbg.statistics(graph_root) -> GraphStats
-    node_count          // particles referenced
-    relation_size(rel)  // rows per committed relation
-    namespace_size(key) // rows under a namespace prefix
-    max_degree          // bound for fan-out per hop
-    diameter_bound      // bound for transitive-closure depth
+bbg.statistics() -> GraphStats            // committed in BBG_root via stats_commit
+    node_count:     u64                    // particles (graph nodes), exact
+    relation_sizes: [u64; 11]              // rows per relation, canonical order, exact
+    max_degree:     u64                    // max adjacency-list length (fan-out per hop)
+    diameter_bound: u64                    // sound upper bound on graph diameter
 
-bbg.read_cost(op) -> cycles
-    point_open          // one Lens opening
-    batch_open(n)       // namespace / range opening of n rows
-    temporal_open       // opening at a past time dimension
+bbg.read_cost(op) -> cycles               // bbg/specs/query.md
+    point_open                            // one Lens opening
+    batch_open(n)                         // namespace / range opening of n rows
+    temporal_open                         // opening at a past time dimension
 ```
 
-committing the statistics is a requirement inf places on bbg: without committed
-`relation_size`, `node_count`, and `diameter_bound`, recursion bounds and
-cardinality estimates would be trusted inputs, and the cost (and the recursion
-bound it feeds) could not be proven. this is tracked as a cross-repo contract
-(see bbg/roadmap).
+`relation_sizes` is indexed in the canonical relation order: particles,
+axons_out, axons_in, neurons, locations, coins, cards, files, time, signals,
+balances.
+
+bbg commits these in `BBG_root` (`stats_commit = H(node_count ‖ relation_sizes ‖
+max_degree ‖ diameter_bound)`); see [[bbg/specs/statistics]]. committed rather
+than passed as a side input, the recursion bound and cardinality estimates rest
+on proven values, so cost and termination are provable, not trusted.
 
 ## the inf side of the contract
 
@@ -58,17 +60,18 @@ inf supplies the query plan and the per-operator cost coefficients.
 ```
 op                cost (cycles)              source of cardinality
 ─────────────     ────────────────────────  ─────────────────────
-scan(rel)         read_cost.batch_open(n)    relation_size(rel)
+scan(rel)         read_cost.batch_open(n)    relation_sizes[rel]
 point(rel,key)    read_cost.point_open       1
+adjacency(p)      read_cost.batch_open(d)    max_degree (bound on d)
 filter            c_filter × n               input cardinality
-join(a,b)         c_join × |a| × sel(b)      relation_size, selectivity
+join(a,b)         c_join × |a| × sel(b)      relation_sizes, selectivity
 aggregate         c_aggr × n                 input cardinality
 sort              c_sort × n log n           output cardinality
 recursion         bound × per_iteration      see below
 ```
 
 selectivity for a join uses committed sizes and key structure (a keyed lookup
-has selectivity 1/relation_size). the coefficients `c_*` are fixed per release
+has selectivity 1/relation_sizes[rel]). the coefficients `c_*` are fixed per release
 and calibrated against the [[nox]] lowering, the same scoreboard discipline
 Trident uses (references ground truth, baselines floor).
 
@@ -77,9 +80,9 @@ Trident uses (references ground truth, baselines floor).
 a bounded recursive rule costs `bound × per_iteration`, where the bound comes
 from the rule (see [language](language.md), bounded recursion):
 
-- default → the committed graph size: `diameter_bound(graph_root)`, or
-  `node_count(graph_root)` as the conservative fallback. the cost scales with
-  the graph and is static because the size is committed in the root.
+- default → the committed `diameter_bound` (bbg commits `node_count − 1` by
+  default, or a tighter tru-proven bound installed via `set_diameter_bound`).
+  the cost scales with the graph and is static because the bound is committed.
 - explicit `:bounded N` → bound is N, capping iterations below the graph size.
 
 `per_iteration` is the cost of one semi-naive step: the reads plus the join that
@@ -91,7 +94,7 @@ convergence witness (language.md) may make the produced proof cheaper, but
 
 ```
 inf cost(query, graph_root):
-    stats   = bbg.statistics(graph_root)
+    stats   = bbg.statistics()                    // committed under graph_root
     plan    = inf.plan(query, stats)              // cardinality-annotated logical plan
     reads   = Σ bbg.read_cost(op)   for read ops in plan
     combine = Σ inf.op_cost(op, card) for relational ops in plan
