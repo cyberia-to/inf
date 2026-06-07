@@ -10,24 +10,19 @@ ordering: do the quick-wins + oracle first (they harden what exists), then the
 headline relational lowering, then proofs; the source/extension/tail tracks can
 run in parallel.
 
-## R0 — quick wins and the oracle (harden what exists)
+## R0 — quick wins and the oracle  (DONE 2026-06-07)
 
-small, high-value, no new external deps.
-
-- cozo differential-oracle harness. wire the vendored rs/cozo as a dev-dep behind
-  a `cozo-oracle` feature; run the eval corpus through both cozo and inf-eval and
-  assert equality on the integer/bounded subset. closes the plan's M0 promise and
-  pins eval's correctness to a battle-tested engine.
-- `pub input/output` decls. parse the declaration grammar (grammar.md) into the
-  AST; currently skipped. lets a program state its I/O shape.
-- temp relations. `:put`/`:rm` into an in-session temp store (currently the
-  evaluator only derives the mutation batch); add `_`-prefixed relation writes
-  visible to later rules in the same script.
-- `cost` completeness (local part). report per-operator breakdown; the committed
-  GraphStats part waits on R3 (bbg).
-
-verify: cozo == inf-eval over the corpus; decl + temp tests.
-estimate: ~2 sessions.
+- cozo differential-oracle: rs/oracle (excluded crate — path-deps gitignored
+  cozo; built with `default-features=false, features=["rayon"]` to dodge the
+  broken `graph` dep). 5 tests assert inf-eval == CozoDB on filter, join,
+  aggregation, transitive closure, negation.
+- `pub input/output` decls: parsed into the AST (Decl/Type/Dir), Named/Array/
+  Record types; `;` added to the lexer.
+- temp relations: `_`-prefixed derived relations work as intra-program temps
+  (test added). `:put`/`:rm` materialization across statements still waits on
+  multi-statement transaction blocks (deferred — needs `{ … }` scripts).
+- `cost`: reads / combine / recursion breakdown in the CLI. committed-GraphStats
+  part still waits on R3 (bbg).
 
 ## R1 — relational nox lowering (stage 3 complete)
 
