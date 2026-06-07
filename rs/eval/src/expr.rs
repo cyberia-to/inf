@@ -4,7 +4,7 @@
 
 use inf_ast::{Addr, Call, Term};
 use inf_value::{tag_hash, Value, F};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A variable binding produced during evaluation.
 pub type Binding = BTreeMap<String, Value>;
@@ -225,8 +225,127 @@ pub fn eval_call(c: &Call, b: &Binding, ctx: &Ctx) -> Result<Value, String> {
             };
             Value::str(&s)
         }
+        "pow" => {
+            arity(2)?;
+            let (x, y) = (a[0].as_int().ok_or("pow: integers")?, a[1].as_int().ok_or("pow: integers")?);
+            if y < 0 {
+                return Err("pow: negative exponent".into());
+            }
+            let mut r: i64 = 1;
+            for _ in 0..y {
+                r = r.checked_mul(x).ok_or("overflow in pow")?;
+            }
+            Value::Int(r)
+        }
+        "signum" => {
+            arity(1)?;
+            Value::Int(a[0].as_int().ok_or("signum: integer")?.signum())
+        }
+        "trim" | "trim_start" | "trim_end" => {
+            arity(1)?;
+            let s = as_str(&a[0])?;
+            Value::str(match c.func.as_str() {
+                "trim" => s.trim(),
+                "trim_start" => s.trim_start(),
+                _ => s.trim_end(),
+            })
+        }
+        "chars" => {
+            arity(1)?;
+            Value::List(as_str(&a[0])?.chars().map(|ch| Value::str(&ch.to_string())).collect())
+        }
+        "reverse" => {
+            arity(1)?;
+            match &a[0] {
+                Value::Bytes(_) => Value::str(&as_str(&a[0])?.chars().rev().collect::<String>()),
+                Value::List(l) => {
+                    let mut v = l.clone();
+                    v.reverse();
+                    Value::List(v)
+                }
+                _ => return Err("reverse: string or list".into()),
+            }
+        }
+        "slice" => {
+            arity(3)?;
+            let i = a[1].as_int().ok_or("slice: integer")?.max(0) as usize;
+            let j = a[2].as_int().ok_or("slice: integer")?.max(0) as usize;
+            match &a[0] {
+                Value::List(l) => {
+                    Value::List(l.iter().skip(i).take(j.saturating_sub(i)).cloned().collect())
+                }
+                Value::Bytes(_) => {
+                    let cs: Vec<char> = as_str(&a[0])?.chars().collect();
+                    Value::str(&cs.iter().skip(i).take(j.saturating_sub(i)).collect::<String>())
+                }
+                _ => return Err("slice: list or string".into()),
+            }
+        }
+        "sorted" => {
+            arity(1)?;
+            let mut l = as_list(&a[0])?;
+            l.sort();
+            Value::List(l)
+        }
+        "prepend" => {
+            arity(2)?;
+            let mut v = vec![a[0].clone()];
+            v.extend(as_list(&a[1])?);
+            Value::List(v)
+        }
+        "append" => {
+            arity(2)?;
+            let mut v = as_list(&a[0])?;
+            v.push(a[1].clone());
+            Value::List(v)
+        }
+        "union" | "intersection" | "difference" => {
+            arity(2)?;
+            let x: BTreeSet<Value> = as_list(&a[0])?.into_iter().collect();
+            let y: BTreeSet<Value> = as_list(&a[1])?.into_iter().collect();
+            let r: Vec<Value> = match c.func.as_str() {
+                "union" => x.union(&y).cloned().collect(),
+                "intersection" => x.intersection(&y).cloned().collect(),
+                _ => x.difference(&y).cloned().collect(),
+            };
+            Value::List(r)
+        }
+        "vec" => {
+            arity(1)?;
+            match &a[0] {
+                Value::List(_) => a[0].clone(),
+                _ => return Err("vec: list of numbers".into()),
+            }
+        }
+        "ip_dist" | "l2_dist" => {
+            arity(2)?;
+            let (x, y) = (as_list(&a[0])?, as_list(&a[1])?);
+            if x.len() != y.len() {
+                return Err("vector length mismatch".into());
+            }
+            let mut acc: i64 = 0;
+            for (p, q) in x.iter().zip(y.iter()) {
+                let pi = p.as_int().ok_or("vec: integer components")?;
+                let qi = q.as_int().ok_or("vec: integer components")?;
+                let term = if c.func == "ip_dist" {
+                    pi.checked_mul(qi).ok_or("overflow")?
+                } else {
+                    let d = pi.checked_sub(qi).ok_or("overflow")?;
+                    d.checked_mul(d).ok_or("overflow")?
+                };
+                acc = acc.checked_add(term).ok_or("overflow")?;
+            }
+            Value::Int(acc) // ip = dot product; l2 = squared distance (exact, no sqrt)
+        }
         other => return Err(format!("unknown function `{other}`")),
     })
+}
+
+fn as_list(v: &Value) -> Result<Vec<Value>, String> {
+    match v {
+        Value::List(l) => Ok(l.clone()),
+        _ => Err("expected a list".into()),
+    }
 }
 
 fn arith(op: &str, x: &Value, y: &Value) -> Result<Value, String> {
@@ -328,6 +447,25 @@ mod tests {
         assert_eq!(
             eval_call(&call("uppercase", vec![Term::Str("ab".into())]), &b, &c).unwrap(),
             Value::str("AB")
+        );
+        assert_eq!(
+            eval_call(&call("pow", vec![Term::Int(2), Term::Int(10)]), &b, &c).unwrap(),
+            Value::Int(1024)
+        );
+        let lst = |xs: &[i64]| Term::List(xs.iter().map(|i| Term::Int(*i)).collect());
+        // dot product (1*4 + 2*5 + 3*6) = 32
+        assert_eq!(
+            eval_call(&call("ip_dist", vec![lst(&[1, 2, 3]), lst(&[4, 5, 6])]), &b, &c).unwrap(),
+            Value::Int(32)
+        );
+        // squared L2: (1-4)^2 + (2-6)^2 = 9 + 16 = 25
+        assert_eq!(
+            eval_call(&call("l2_dist", vec![lst(&[1, 2]), lst(&[4, 6])]), &b, &c).unwrap(),
+            Value::Int(25)
+        );
+        assert_eq!(
+            eval_call(&call("union", vec![lst(&[1, 2]), lst(&[2, 3])]), &b, &c).unwrap(),
+            Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
         );
     }
 
