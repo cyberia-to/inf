@@ -337,7 +337,7 @@ pub fn eval_call(c: &Call, b: &Binding, ctx: &Ctx) -> Result<Value, String> {
             }
             Value::Int(acc) // ip = dot product; l2 = squared distance (exact, no sqrt)
         }
-        other => return Err(format!("unknown function `{other}`")),
+        other => return crate::funcs::extra(other, &a),
     })
 }
 
@@ -381,7 +381,7 @@ fn arith(op: &str, x: &Value, y: &Value) -> Result<Value, String> {
     }
 }
 
-fn as_str(v: &Value) -> Result<String, String> {
+pub(crate) fn as_str(v: &Value) -> Result<String, String> {
     match v {
         Value::Bytes(b) => Ok(String::from_utf8_lossy(b).to_string()),
         _ => Err("expected a text value".into()),

@@ -6,6 +6,8 @@
 mod agg;
 mod expr;
 mod fixed;
+mod fixed_more;
+mod funcs;
 
 pub use expr::Ctx;
 

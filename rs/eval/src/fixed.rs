@@ -12,14 +12,14 @@ const PR_SCALE: i64 = 1_000_000;
 
 /// Edges as (from, to, weight). The edges relation is read positionally:
 /// column 0 = from, 1 = to, optional 2 = integer weight (default 1).
-struct Graph {
-    nodes: Vec<Value>,
-    out: BTreeMap<Value, Vec<(Value, i64)>>,
-    inc: BTreeMap<Value, Vec<Value>>,
+pub(crate) struct Graph {
+    pub(crate) nodes: Vec<Value>,
+    pub(crate) out: BTreeMap<Value, Vec<(Value, i64)>>,
+    pub(crate) inc: BTreeMap<Value, Vec<Value>>,
 }
 
 impl Graph {
-    fn build(edges: &[Tuple]) -> Result<Graph, String> {
+    pub(crate) fn build(edges: &[Tuple]) -> Result<Graph, String> {
         let mut node_set = BTreeSet::new();
         let mut out: BTreeMap<Value, Vec<(Value, i64)>> = BTreeMap::new();
         let mut inc: BTreeMap<Value, Vec<Value>> = BTreeMap::new();
@@ -40,25 +40,31 @@ impl Graph {
         }
         Ok(Graph { nodes: node_set.into_iter().collect(), out, inc })
     }
-    fn neighbors(&self, v: &Value) -> &[(Value, i64)] {
+    pub(crate) fn neighbors(&self, v: &Value) -> &[(Value, i64)] {
         self.out.get(v).map(|x| x.as_slice()).unwrap_or(&[])
     }
 }
 
-pub fn run(f: &Fixed, head: &Head, edges: &[Tuple], ctx: &Ctx) -> Result<Vec<Tuple>, String> {
+pub(crate) const PR_SCALE_PUB: i64 = PR_SCALE;
+
+pub fn run(f: &Fixed, _head: &Head, edges: &[Tuple], ctx: &Ctx) -> Result<Vec<Tuple>, String> {
     let g = Graph::build(edges)?;
-    let param = |k: &str| -> Option<i64> {
-        f.params
-            .iter()
-            .find(|(n, _)| n == k)
-            .and_then(|(_, t)| eval_term(t, &Default::default(), ctx).ok())
-            .and_then(|v| v.as_int())
-    };
+    let params: Vec<(String, i64)> = f
+        .params
+        .iter()
+        .filter_map(|(k, t)| {
+            eval_term(t, &Default::default(), ctx).ok().and_then(|v| v.as_int()).map(|i| (k.clone(), i))
+        })
+        .collect();
+    let pos_vals: Vec<Value> = f
+        .pos
+        .iter()
+        .map(|t| eval_term(t, &Default::default(), ctx))
+        .collect::<Result<_, _>>()?;
+    let param = |k: &str| -> Option<i64> { params.iter().find(|(n, _)| n == k).map(|(_, v)| *v) };
     let pos = |i: usize| -> Result<Value, String> {
-        let t = f.pos.get(i).ok_or_else(|| format!("`{}` missing positional argument {i}", f.algo))?;
-        eval_term(t, &Default::default(), ctx)
+        pos_vals.get(i).cloned().ok_or_else(|| format!("`{}` missing positional argument {i}", f.algo))
     };
-    let arity = head.args.len();
 
     match f.algo.as_str() {
         "DegreeCentrality" => degree_centrality(&g),
@@ -70,9 +76,7 @@ pub fn run(f: &Fixed, head: &Head, edges: &[Tuple], ctx: &Ctx) -> Result<Vec<Tup
         "ShortestPathDijkstra" => shortest_path_dijkstra(&g, &pos(0)?, &pos(1)?),
         "TopSort" => top_sort(&g),
         "PageRank" => page_rank(&g, param("theta").unwrap_or(85), param("iters").unwrap_or(20)),
-        other => Err(format!(
-            "fixed rule `{other}` is not implemented in the reference engine (arity {arity})"
-        )),
+        other => crate::fixed_more::run(other, &g, &params, &pos_vals),
     }
 }
 
@@ -225,7 +229,7 @@ fn strongly_connected(g: &Graph) -> Result<Vec<Tuple>, String> {
         .collect())
 }
 
-fn reconstruct(prev: &BTreeMap<Value, Value>, a: &Value, b: &Value) -> Value {
+pub(crate) fn reconstruct(prev: &BTreeMap<Value, Value>, a: &Value, b: &Value) -> Value {
     let mut path = vec![b.clone()];
     let mut cur = b.clone();
     while &cur != a {

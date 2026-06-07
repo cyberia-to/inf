@@ -11,6 +11,8 @@ path = "src/lib.rs"
 inf-ast = { path = "../ast" }
 inf-value = { path = "../value" }
 inf-source = { path = "../source" }
+regex = "1"
+serde_json = "1"
 
 [dev-dependencies]
 inf-parse = { path = "../parse" }

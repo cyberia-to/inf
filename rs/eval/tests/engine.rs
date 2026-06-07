@@ -228,6 +228,56 @@ fn fixed_rule_pagerank_deterministic_and_positive() {
 }
 
 #[test]
+fn fixed_rule_mst_and_astar_and_yen() {
+    // MST of the (tree) fixture: all 4 edges, total weight 10+5+2+1 = 18
+    let mst = run("edges[from, to, w] := axons{from, to, weight_sum: w}\n?[from, to, w] <~ MinimumSpanningForestKruskal(edges[])");
+    assert_eq!(mst.rows.len(), 4);
+    let w = col(&mst, "w");
+    let total: i64 = mst.rows.iter().map(|r| r[w].as_int().unwrap()).sum();
+    assert_eq!(total, 18);
+
+    // A* seed→c (zero heuristic ⇒ Dijkstra): cost 17
+    let a = run("edges[from, to, w] := axons{from, to, weight_sum: w}\n?[path, cost] <~ ShortestPathAStar(edges[], #seed, #c)");
+    assert_eq!(a.rows[0][col(&a, "cost")], Value::int(17));
+
+    // Yen k=2 from seed to c: only one path exists in the DAG
+    let y = run("edges[from, to, w] := axons{from, to, weight_sum: w}\n?[path, cost] <~ KShortestPathYen(edges[], #seed, #c, k: 2)");
+    assert_eq!(y.rows.len(), 1);
+    assert_eq!(y.rows[0][col(&y, "cost")], Value::int(17));
+}
+
+#[test]
+fn fixed_rule_centralities_and_community() {
+    // betweenness: b lies on shortest paths (seed→c, a→c); sinks have 0
+    let bw = run("edges[from, to] := axons{from, to}\n?[node, c] <~ BetweennessCentrality(edges[])");
+    let n = col(&bw, "node");
+    let c = col(&bw, "c");
+    let bval = |who| bw.rows.iter().find(|r| r[n] == who).unwrap()[c].as_int().unwrap();
+    assert!(bval(p("b")) > 0, "b is a bridge");
+    assert_eq!(bval(p("c")), 0, "sink c has zero betweenness");
+
+    // closeness: seed reaches others ⇒ positive; sink c reaches none ⇒ 0
+    let cl = run("edges[from, to] := axons{from, to}\n?[node, c] <~ ClosenessCentrality(edges[])");
+    let n2 = col(&cl, "node");
+    let c2 = col(&cl, "c");
+    assert!(cl.rows.iter().find(|r| r[n2] == p("seed")).unwrap()[c2].as_int().unwrap() > 0);
+
+    // these run and label every node
+    for algo in ["LabelPropagation", "ClusteringCoefficients", "CommunityDetectionLouvain"] {
+        let q = format!("edges[from, to] := axons{{from, to}}\n?[node, x] <~ {algo}(edges[])");
+        assert_eq!(run(&q).rows.len(), 5, "{algo} labels all nodes");
+    }
+}
+
+#[test]
+fn fixed_rule_random_walk_seeded_deterministic() {
+    let q = "edges[from, to] := axons{from, to}\n?[node, visits] <~ RandomWalk(edges[], #seed, steps: 5, times: 10, seed: 42)";
+    let out = run(q);
+    assert!(!out.rows.is_empty());
+    assert_eq!(run(q).rows, out.rows, "seeded walk is deterministic");
+}
+
+#[test]
 fn infix_arithmetic_in_bind() {
     let out = run("?[to, boosted] := axons{from: #seed, to, weight_sum: w}, boosted = w * 2");
     let b = col(&out, "boosted");
