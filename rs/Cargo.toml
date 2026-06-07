@@ -3,7 +3,7 @@
 [workspace]
 resolver = "2"
 members = ["value", "ast", "lex", "parse", "source", "plan", "eval", "cli", "lower"]
-exclude = ["cozo"]
+exclude = ["cozo", "oracle"]
 
 [workspace.package]
 edition = "2021"

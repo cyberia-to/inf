@@ -1,0 +1,23 @@
+# Differential oracle: runs the same logical query through inf-eval and the
+# vendored CozoDB, asserting equal results. Excluded from the workspace because
+# it path-depends on the gitignored rs/cozo; build it explicitly:
+#   cd rs/oracle && cargo test
+[package]
+name = "inf-oracle"
+version = "0.1.0"
+edition = "2021"
+license = "Cyber"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+inf-value = { path = "../value" }
+inf-parse = { path = "../parse" }
+inf-plan = { path = "../plan" }
+inf-eval = { path = "../eval" }
+inf-source = { path = "../source" }
+# pure-datalog only: `rayon` is on (cozo-core references it unconditionally) but
+# the `graph` dep (graph algorithms; its graph_builder dep breaks under current
+# rayon) and sqlite stay off. the in-memory engine needs no storage feature.
+cozo = { path = "../cozo/cozo-core", default-features = false, features = ["rayon"] }
