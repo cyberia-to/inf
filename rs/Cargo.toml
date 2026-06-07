@@ -1,0 +1,13 @@
+# inf engine — cargo workspace. cozo/ is the gitignored differential oracle and
+# carries its own workspace, so it is excluded here.
+[workspace]
+resolver = "2"
+members = ["value"]
+exclude = ["cozo"]
+
+[workspace.package]
+edition = "2021"
+license = "Cyber"
+
+[profile.release]
+opt-level = 3
