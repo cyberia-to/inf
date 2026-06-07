@@ -11,7 +11,7 @@ formal grammar for the pure register of [[inf]]. semantics in
 
 ```ebnf
 (* Program *)
-program       = decl* rule+ option* ;
+program       = decl* rule+ mutation? option* ;
 decl          = pub_input | pub_output ;          (* [trident] declarations *)
 pub_input     = "pub" "input" IDENT ":" type ;
 pub_output    = "pub" "output" IDENT ":" type ;
@@ -49,6 +49,10 @@ args          = term ("," term)* ;
 (* Terms *)
 term          = literal | IDENT | call | address | "[" args? "]" ;
 address       = "#" PATH | "@" IDENT | "~" IDENT ;  (* cybermark, [trident] *)
+
+(* Mutation — the entry rule's tuples become a cyberlink batch (a signal) *)
+mutation      = (":link" | ":unlink") "{" field_binds "}"   (* canonical → signal *)
+              | (":put" | ":rm") "_" IDENT "{" field_binds "}" ;  (* temp relation, pure *)
 
 (* Options — apply to the whole program *)
 option        = ":limit" INTEGER | ":offset" INTEGER
@@ -91,5 +95,8 @@ to the provable subset:
 - recursion requires a static bound (`:bounded` or inferable); CozoScript
   allows unbounded fixpoint to convergence.
 - arithmetic delegates to siblings; CozoScript has its own float math.
-- mutations (`:put`, `:create`, `:rm`) are excluded from the pure register;
-  writes flow rune → cybergraph → [[bbg]].
+- mutations target signals, not a local store. `:link`/`:unlink` over canonical
+  relations emit a staked cyberlink batch (a [[signal]]) through cybergraph →
+  [[bbg]]; CozoScript's `:put`/`:rm` write a local DB. `:put`/`:rm` survive only
+  for underscore-prefixed temp relations. the derivation half is in the pure
+  subset; the commit is an effect.

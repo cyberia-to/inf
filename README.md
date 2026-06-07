@@ -45,6 +45,18 @@ reachable[p] := reachable{mid}, axons{from: mid, to: p}
 ?[weight_sum] := axons{from: #a, to: #b, weight_sum}
 ```
 
+inf also updates — in bulk. a signal is a set of cyberlinks, and inf is
+set-based, so it derives the whole set from a pattern and commits it as one
+staked signal. the derivation is provable: the mass update touched exactly these
+and no others.
+
+```datalog
+// relink every axon under #old to #new, in one signal
+stale[from] := axons{from, to: #old}, cyberlinks{neuron: @me, from}
+?[from] := stale[from]
+:link { neuron: @me, from, to: #new }
+```
+
 more in the [whitepaper](docs/) — paths and shortest linkchains, provenance of
 your own links, communities and bridge particles, vector-similar particles,
 historical state at any past block, and graph-wide invariants.
@@ -66,7 +78,8 @@ historical state at any past block, and graph-wide invariants.
 - exact — values are field elements, never floats. arithmetic delegates to
   siblings: [[Trident|Tri]] (field), [[Rs]] (bytes), [[Bt]] (bits),
   [[Ten]] (vectors).
-- the declarative twin of [[rune]] — rune writes the graph, inf reads it.
+- the declarative twin of [[rune]] — same graph, two paradigms: rune mutates it
+  imperatively, inf queries and mass-updates it declaratively.
 
 | register | reads | proof |
 |---|---|---|

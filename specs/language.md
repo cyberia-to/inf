@@ -87,9 +87,10 @@ canonical in cybergraph/specs/query.md. the visible set and access scope follow
 - `particles`, `neurons`, `signals`, `focus`, `karma` — committed state,
   read at the snapshot.
 
-inf does not write canonical relations. mutations flow rune → cybergraph →
-[[bbg]]. inf rules may build temporary relations that exist only for the
-duration of a query.
+inf mutates canonical relations declaratively — see mutation below — routed
+through cybergraph → [[bbg]] as staked signals, never a direct store write. inf
+rules also build temporary relations that exist only for the duration of a
+query.
 
 ## rules
 
@@ -126,6 +127,44 @@ keys.
 
 semi-lattice operators (`min`, `max`, `union`, `intersection`) are admissible
 inside recursive rules because they converge monotonically.
+
+## mutation — declarative mass update
+
+a [[signal]] is a staked, signed batch of [[cyberlinks]]. inf is set-based, so it
+is the natural way to construct one: a rule derives a set of links from a pattern
+over the current state, and a mutation op (`:link` / `:unlink`) asserts or
+retracts that set in bulk. this is inf's distinctive power — mass update —
+complementing [[rune]]'s imperative, per-item effects. both surfaces mutate
+through cybergraph → [[bbg]]; neither writes a store directly.
+
+| op | target | effect |
+|---|---|---|
+| `:link { … }` | canonical | create the derived set of cyberlinks |
+| `:unlink { … }` | canonical | withdraw stake / counter-assert the derived set |
+| `:put` / `:rm` | `_temp` | write a query-local relation (pure intermediate) |
+
+`:link`/`:unlink` are distinct from the `:assert none`/`:assert some` invariant
+options, which check a result set rather than mutate.
+
+```
+// relink every axon under a namespace from #old to #new, in one signal
+stale[from] := axons{from, to: #old}, cyberlinks{neuron: @me, from}
+?[from] := stale[from]
+:link { neuron: @me, from, to: #new }
+```
+
+mutation has two halves:
+
+- derivation — pure and provable. the proof certifies the committed set is
+  exactly what the rule implies over the prior state, complete and nothing extra.
+  this is provable bulk mutation — a migration can prove it touched precisely the
+  right set. the derivation is in the Trident-pure subset.
+- commit — an effect. the derived batch becomes a [[signal]], staked and signed
+  once by the submitting neuron, then ordered and validated by cybergraph. the
+  commit sits outside the pure subset, the way [[rune]]'s `host`/`hint` do.
+
+canonical relations (`cyberlinks`, `axons`, …) are mutated only as signals;
+`:put`/`:rm` to underscore-prefixed temp relations stay pure and local.
 
 ## bounded recursion
 

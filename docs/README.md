@@ -9,7 +9,8 @@ inf is the language you use to ask the [[cybergraph]] questions and get answers
 you can prove. you describe what you want to know; inf returns the result with a
 [[zheng]] proof that it follows from the graph's committed state. anyone holding
 the 32-byte graph root can verify the answer in microseconds — without the
-graph, without trusting the node that computed it.
+graph, without trusting the node that computed it. the same set-based language
+also updates the graph in bulk, committing mass mutations as provable signals.
 
 this document is about what that buys you: the questions inf answers, why a
 proven answer is worth more than an answer, and how the language delivers it. the
@@ -193,9 +194,40 @@ inf does not own storage. the relations you query are views over committed
 - `particles`, `neurons`, `focus`, `karma`, `signals` — committed state read at
   the snapshot.
 
-you never write these through inf. writing the graph is [[rune]]'s job; the path
-is rune → cybergraph → bbg. inf reads and reasons. its own intermediate results
-live as [[nox]] nouns for the duration of a query, not in a separate database.
+inf reads these at the snapshot and mutates them in bulk (see mutation below).
+its own intermediate results live as [[nox]] nouns for the duration of a query,
+not in a separate database; canonical mutations route through cybergraph → bbg
+as signals, never a direct store write.
+
+## mutation — declarative mass update
+
+inf reads in bulk and writes in bulk. a [[signal]] is a staked, signed batch of
+[[cyberlinks]], and inf is set-based — so it is the natural way to build one:
+derive the whole set of links a rule implies over the current state, then assert
+it (`:link`) or retract it (`:unlink`) as a single signal.
+
+```datalog
+// relink every axon under #old to #new, in one signal
+stale[from] := axons{from, to: #old}, cyberlinks{neuron: @me, from}
+?[from] := stale[from]
+:link { neuron: @me, from, to: #new }
+```
+
+this is inf's complement to [[rune]]. rune mutates imperatively — one scripted,
+reactive action at a time, the agent's nervous system. inf mutates declaratively
+— the entire matching set at once, the migration and mass-update tool. forcing a
+bulk update through rune's loop is as wrong as forcing reactive agent logic into
+datalog.
+
+a mutation has two halves. the derivation is pure and provable: the proof
+certifies the committed batch is exactly what the rule implies over the prior
+state — complete, nothing extra. provable bulk mutation lets a migration show it
+touched precisely the right links. the commit is the effect: the batch becomes a
+signal, staked and signed once by the submitting neuron, ordered and validated by
+cybergraph. read-only queries stay unconditionally provable; the derivation of an
+update joins them in the pure subset, while the commit sits outside it, like
+rune's `host` and `hint`. both surfaces write through cybergraph → bbg; neither
+touches a store directly.
 
 ## the three registers
 
@@ -301,10 +333,11 @@ defined by the Trident contract, not by what cozo happens to do.
 the cyber stack has fourteen proof languages, each algebraically irreducible.
 inf is #10 — Infer, the algebra of relations and inference. it stands beside
 [[Rs]] (bytes), [[Trident|Tri]] (field), [[Bt]] (bits), and [[Ten]] (tensors),
-under none of them. above the fourteen sit two surfaces: [[rune]] (imperative,
-writes) and inf (declarative, reads). same stack position, opposite verb. the
-relationship to [[trident]] is the one [[rune]] has — inf is the declarative
-twin, its pure subset a literal sub-grammar of Trident.
+under none of them. above the fourteen sit two surfaces: [[rune]] (imperative)
+and inf (declarative). both read and mutate the same graph; the split is
+paradigm, not direction — rune scripts per-item effects, inf derives and
+mass-updates sets. the relationship to [[trident]] is the one [[rune]] has — inf
+is the declarative twin, its pure subset a literal sub-grammar of Trident.
 
 ## what it enables
 

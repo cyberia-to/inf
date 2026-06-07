@@ -20,10 +20,10 @@ magic-set, RA, semi-naive eval, fixed rules) is identical across modes — only
 where base relations resolve changes. three modes, increasing abstraction:
 
 ```
-                 base relations resolve from        provable   writes      content
-direct   ─────►  inf's own local store (mem)         no         read-write  no
-bbg      ─────►  bbg committed polynomial state      yes        read-only   no
-cybergraph ───►  cybergraph API (bbg+tru+sync)       yes        read-only   yes
+                 base relations resolve from        provable   writes     content
+direct   ─────►  inf's own local store (mem)         no         temp only  no
+bbg      ─────►  bbg committed polynomial state      yes        signal     no
+cybergraph ───►  cybergraph API (bbg+tru+sync)       yes        signal     yes
 ```
 
 direct < bbg < cybergraph is a containment order, not three parallel things.
@@ -177,8 +177,10 @@ outside (csv import) taint a query as unprovable.
   decodes field elements into the same typed tuples; it just exposes fewer
   relations and no content.
 
-- writes: all canonical writes flow rune → cybergraph → bbg regardless of read
-  mode. inf `:put`/`:create`/`:rm` work only on temp relations.
+- writes: inf is read-write. both rune (imperative) and inf (declarative mass
+  update) mutate the cybergraph through cybergraph → bbg as staked signals.
+  canonical mutation is `:link`/`:unlink` emitting a signal; `:put`/`:rm` stay
+  for temp relations. writes route through cybergraph regardless of read mode.
 
 ## open questions
 
