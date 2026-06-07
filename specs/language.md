@@ -37,7 +37,7 @@ inf values are [[nox]] atoms — the three modes of reference:
 |---|---|---|
 | field | one Goldilocks element, [0, p), p = 2⁶⁴ − 2³² + 1 | exact numbers, weights, scores |
 | word | one element holding a 32-bit value | bitwise, indices, counts |
-| hash | 4 elements, 256-bit digest | particle identity (cid, neuron) |
+| hash | 4 elements, 256-bit digest | particle / neuron identity |
 
 higher shapes (tuples, lists) are [[nox]] cons-structure over these atoms.
 numbers are exact field elements. inf has no floating point. focus (φ*), karma,
@@ -49,7 +49,7 @@ types name atom shapes and map onto Trident's types:
 |---|---|---|
 | `Field` | field | `Field` |
 | `Word` | word | `U32` |
-| `Cid` / `Neuron` | hash | `Digest` |
+| `Particle` / `Neuron` | hash | `Digest` |
 | `Bool` | field (0/1) | `Bool` |
 | `[T; N]` | cons-structure | `[T; N]` |
 
@@ -66,7 +66,7 @@ in inf (see interop):
 an inf program declares its interface the way a Trident program does:
 
 ```
-pub input  graph_root : Cid          // the cybergraph at a block
+pub input  graph_root : Particle     // the cybergraph at a block
 pub input  params     : { ... }       // query parameters
 pub output result      : Relation     // the derived result set
 ```

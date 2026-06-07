@@ -2,18 +2,17 @@
 tags: cyber, soft3, inf
 crystal-type: process
 crystal-domain: cyber
-status: draft
+status: implemented
 date: 2026-06-07
 ---
 # inf query modes
 
-NOTE (2026-06-07): these data-source modes are now recast under the Trident
-register model (pure/static · reactive · live) — see .claude/plans/
-inf-spec-plan.md and the eventual specs/extensions.md. mapping: bbg = the
-static register's raw committed relations; cybergraph = derived static
-relations + reactive `subscribe` + content (the "control over what/how added"
-layer); direct = bootstrap dev harness, not a language register. the privacy
-resolution below stands unchanged.
+IMPLEMENTED. the decisions in this proposal have migrated to the canonical specs:
+registers → [language](../language.md) and [extensions](../extensions.md); data
+sources, the `RelationSource` boundary, the temp store, privacy scopes, and the
+open questions → [relations](../relations.md). this file is kept as the design
+record — the modes → registers journey and the rationale behind each call. read
+the specs for what holds; read here for why.
 
 inf binds to a data source at session open. the engine (parser, stratify,
 magic-set, RA, semi-naive eval, fixed rules) is identical across modes — only
@@ -113,7 +112,7 @@ coins, cards, files, locations, time, signals   dimensions 4..9
 ```
 
 read-only over canonical state; snapshot = a block height. every read can
-become a Lens opening, so queries here are provable (→ specs/circuit.md). this
+become a Lens opening, so queries here are provable (see ../proof.md). this
 is the light-client / validator path: lowest trust assumption, raw aggregates,
 verifiable answers. focus and karma ARE here — bbg commits φ* per particle and
 focus/karma/stake per neuron.

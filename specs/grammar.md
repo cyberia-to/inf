@@ -60,7 +60,7 @@ option        = ":limit" INTEGER | ":offset" INTEGER
               | ":assert" ("none" | "some") ;
 
 (* Types *)
-type          = "Field" | "Word" | "Bool" | "Cid" | "Neuron"  (* [trident] *)
+type          = "Field" | "Word" | "Bool" | "Particle" | "Neuron"  (* [trident] *)
               | "[" type ";" INTEGER "]"
               | "{" (IDENT ":" type ",")* "}" ;
 

@@ -94,6 +94,45 @@ latest cyberlink by neuron and path), withdrawal (`:unlink`), and tombstones. a
 filesystem or database view sees mutable records; underneath, `cyberlinks` only
 ever grows, and every past state stays queryable through the time dimension.
 
+## the source boundary
+
+inf's evaluator resolves every base relation through one boundary, so the same
+engine runs over local, bbg, or cybergraph data unchanged:
+
+```rust
+trait RelationSource {
+    fn schema(&self, name: &str) -> Option<RelationSchema>;
+    fn get(&self, name: &str, key: &Tuple) -> Result<Option<Tuple>>;
+    fn scan(&self, name: &str, range: NamespaceRange) -> TupleIter;
+    fn snapshot(&self) -> Option<Height>;   // None = local, no chain time
+    fn provable(&self) -> bool;             // reads can become Lens openings
+    fn writable(&self, name: &str) -> bool; // canonical relations: false
+}
+```
+
+a session binds one source at open (see [props/query-modes](props/query-modes.md)
+for the modes ↔ registers mapping): the local source (bootstrap, no proofs), the
+bbg source (committed state, provable), or the cybergraph source (bbg plus derived
+relations, tru freshness, and content). a query-local temp store is always present
+alongside the bound source, holding intermediate and `_`-prefixed relations.
+
+## temp store allocation
+
+the temp store is inf's own ordered-KV/MVCC structure, allocated from honeycrisp
+`unimem` (an arena/pool; a heap arena off Apple Silicon) — the same memory the
+graph-algorithm working sets use, zero-copy to the GPU/AMX that run them. inf owns
+the structure, honeycrisp owns the memory, bbg owns the state. bbg's typed
+EPHEMERAL dimension is a sibling over the same allocator, not a host for query
+scratch.
+
+## open
+
+- mode discovery: a query declares no mode; the host binds the source, and a
+  query that needs more than the source offers (e.g. content under the bbg source)
+  fails with a capability error.
+- owner-key model: how the caller's identity and opening keys reach the source so
+  `cyberlinks` visibility resolves — carried in the session context.
+
 ## see also
 
 - cybergraph/specs/query.md — canonical relation schemas (the source of truth)
