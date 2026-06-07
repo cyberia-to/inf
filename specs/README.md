@@ -40,7 +40,6 @@ patterns → zheng like any Trident dialect:
 | [extensions](extensions.md) | reactive (`subscribe`) and live registers; their proof contracts |
 | [interop](interop.md) | calling Tri/Rs/Bt/Ten; called from Rune-pure |
 | [bootstrap](bootstrap.md) | the four-stage CozoDB migration |
-| [props/](props/) | design proposals (draft → accepted → implemented) |
 
 reference (queries/functions/algorithms/relations) is canonical and lives here,
 not in docs/. docs/ holds the whitepaper and teaching material; the five
@@ -50,6 +49,6 @@ counterparts supersede them.
 ## status
 
 first draft complete — language, grammar, cost, relations, functions,
-algorithms, proof, ir, extensions, interop, bootstrap, and the query-modes
-proposal. next: a refinement pass and the rs/ implementation. the plan and
-sequencing live in .claude/plans/inf-spec-plan.md.
+algorithms, proof, ir, extensions, interop, bootstrap. next: the rs/
+implementation toward bootstrap stage 3. the plan lives in
+.claude/plans/stage3-engine.md.

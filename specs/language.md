@@ -79,8 +79,8 @@ each row carries a [[lens]] opening against graph_root (see proof).
 
 full reference in [relations](relations.md). base relations are views over
 committed [[bbg]] state. their schemas are
-canonical in cybergraph/specs/query.md. the visible set and access scope follow
-[the query-modes proposal](props/query-modes.md):
+canonical in cybergraph/specs/query.md. the visible set and access scope are in
+[relations](relations.md):
 
 - `axons` — public aggregate, scannable by anyone.
 - `cyberlinks` — neuron-scoped: a scan returns the caller's own links

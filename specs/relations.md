@@ -60,10 +60,10 @@ returned row is provable (see proof). consistency follows cybergraph/specs/query
 accepted height; `axons` updates in the same transaction; `focus` and `karma` lag
 by one tru cycle.
 
-a query may name relations from the mode it is bound to (see
-[props/query-modes](props/query-modes.md)): bbg mode exposes the raw committed
-relations; cybergraph mode adds derived/normalized relations, tru-fresh
-`focus`/`karma`, and particle content.
+a query may name relations from the source it is bound to: the bbg source
+exposes the raw committed relations; the cybergraph source adds
+derived/normalized relations, tru-fresh `focus`/`karma`, and particle content
+(see the source boundary below).
 
 ## mutation — append only
 
@@ -110,10 +110,11 @@ trait RelationSource {
 }
 ```
 
-a session binds one source at open (see [props/query-modes](props/query-modes.md)
-for the modes ↔ registers mapping): the local source (bootstrap, no proofs), the
-bbg source (committed state, provable), or the cybergraph source (bbg plus derived
-relations, tru freshness, and content). a query-local temp store is always present
+a session binds one source at open: the local source (bootstrap dev harness, no
+proofs), the bbg source (committed state, the pure register, provable), or the
+cybergraph source (bbg plus derived relations, tru freshness, content, and the
+reactive register). these correspond to the registers in [language](language.md)
+and [extensions](extensions.md). a query-local temp store is always present
 alongside the bound source, holding intermediate and `_`-prefixed relations.
 
 ## temp store allocation
@@ -138,4 +139,3 @@ scratch.
 - cybergraph/specs/query.md — canonical relation schemas (the source of truth)
 - [language](language.md) — value model, rules, mutation
 - [proof](proof.md) — how a read or an appended set certifies against a root
-- [props/query-modes](props/query-modes.md) — which relations each mode exposes
