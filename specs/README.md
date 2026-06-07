@@ -33,10 +33,10 @@ patterns → zheng like any Trident dialect:
 | [grammar](grammar.md) | formal EBNF; productions shared with Trident marked |
 | [cost](cost.md) | static cost model; the bbg ↔ inf interface |
 | [relations](relations.md) | relation model: views, visibility, snapshot reads, append-only mutation, temp relations |
-| [functions](functions.md) | builtin reference; field-element semantics, delegation to Tri/Rs/Bt/Ten (planned) |
-| [algorithms](algorithms.md) | fixed-rule catalog; lowering to Ten (planned) |
-| [proof](proof.md) | proof contract: result certified against a BBG root; Lens openings (planned) |
-| [ir](ir.md) | query-plan IR and Nox-pattern lowering (planned) |
+| [functions](functions.md) | builtin reference; field-element semantics, delegation to Tri/Rs/Bt/Ten |
+| [algorithms](algorithms.md) | fixed-rule catalog; bounded; lowering to Ten |
+| [proof](proof.md) | proof contract: result certified against a BBG root; Lens openings |
+| [ir](ir.md) | query-plan IR and Nox-pattern lowering |
 | [extensions](extensions.md) | reactive (`subscribe`) and live registers; their proof contracts (planned) |
 | [interop](interop.md) | calling Tri/Rs/Bt/Ten; called from Rune-pure (planned) |
 | [bootstrap](bootstrap.md) | the four-stage CozoDB migration (planned) |
@@ -49,5 +49,6 @@ counterparts supersede them.
 
 ## status
 
-drafting. language, grammar, cost, relations are first. the plan and sequencing
-live in .claude/plans/inf-spec-plan.md.
+drafting. language, grammar, cost, relations, functions, algorithms, proof, ir
+are written; extensions, interop, bootstrap remain. the plan and sequencing live
+in .claude/plans/inf-spec-plan.md.
