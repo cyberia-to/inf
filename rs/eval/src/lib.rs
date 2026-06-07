@@ -69,6 +69,37 @@ pub fn eval_const_term(t: &Term) -> Result<Value, EvalError> {
     expr::eval_term(t, &Default::default(), &Ctx::default()).map_err(|m| EvalError { msg: m })
 }
 
+/// A mutation event for the reactive register: a tuple appended to a relation.
+#[derive(Clone, Debug)]
+pub struct Event {
+    pub rel: String,
+    pub tuple: Tuple,
+}
+
+/// Reactive evaluation (specs/extensions.md). Apply each event to the source;
+/// when an event matches the `:subscribe` relation (or there is no selector),
+/// re-evaluate and emit a result. The event log is the witness sequence the
+/// proof would be conditional on.
+pub fn eval_reactive(
+    ir: &IrProgram,
+    mut source: inf_source::LocalSource,
+    events: &[Event],
+    ctx: &Ctx,
+) -> Result<Vec<Output>, EvalError> {
+    let mut outs = Vec::new();
+    for ev in events {
+        source.insert(&ev.rel, ev.tuple.clone()).map_err(|m| EvalError { msg: m })?;
+        let trigger = match &ir.subscribe {
+            None => true,
+            Some((rel, _)) => &ev.rel == rel,
+        };
+        if trigger {
+            outs.push(eval(ir, &source, ctx)?);
+        }
+    }
+    Ok(outs)
+}
+
 pub fn eval(ir: &IrProgram, src: &dyn RelationSource, ctx: &Ctx) -> Result<Output, EvalError> {
     let mut env: Env = Env::new();
 

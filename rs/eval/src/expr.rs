@@ -9,14 +9,18 @@ use std::collections::{BTreeMap, BTreeSet};
 /// A variable binding produced during evaluation.
 pub type Binding = BTreeMap<String, Value>;
 
-/// Session context: the identity `@me` resolves to.
+/// A live-register host provider: resolves `Host.fn(args)` to a witness value.
+pub type HostFn = Box<dyn Fn(&str, &[Value]) -> Result<Value, String>>;
+
+/// Session context: the identity `@me` resolves to, and the optional live host.
 pub struct Ctx {
     pub self_neuron: [u8; 32],
+    pub host: Option<HostFn>,
 }
 
 impl Default for Ctx {
     fn default() -> Self {
-        Ctx { self_neuron: tag_hash("@me") }
+        Ctx { self_neuron: tag_hash("@me"), host: None }
     }
 }
 
@@ -58,6 +62,14 @@ pub fn eval_call(c: &Call, b: &Binding, ctx: &Ctx) -> Result<Value, String> {
         .iter()
         .map(|x| eval_term(x, b, ctx))
         .collect::<Result<_, _>>()?;
+    // live register: `Host.fn(args)` is resolved by the host provider as a witness
+    if c.sibling.as_deref() == Some("Host") {
+        let host = ctx
+            .host
+            .as_ref()
+            .ok_or("live register: no host provider configured")?;
+        return host(&c.func, &a);
+    }
     let arity = |n: usize| -> Result<(), String> {
         if a.len() == n {
             Ok(())

@@ -1,7 +1,7 @@
 //! End-to-end engine tests: parse → plan → eval over a fixture graph. These are
 //! the canonical-semantics corpus the nox lowering is differential-tested against.
 
-use inf_eval::{eval, Ctx, MutOp, Output};
+use inf_eval::{eval, eval_reactive, Ctx, Event, MutOp, Output};
 use inf_parse::parse;
 use inf_plan::plan;
 use inf_source::LocalSource;
@@ -275,6 +275,41 @@ fn fixed_rule_random_walk_seeded_deterministic() {
     let out = run(q);
     assert!(!out.rows.is_empty());
     assert_eq!(run(q).rows, out.rows, "seeded walk is deterministic");
+}
+
+#[test]
+fn reactive_re_evaluates_on_subscribed_events() {
+    let ir = plan(&parse("?[to] := axons{from: #seed, to}\n:subscribe axons").unwrap()).unwrap();
+    let mut base = LocalSource::new();
+    base.add("axons", &["from", "to", "weight_sum"], vec![]);
+    let events = vec![
+        Event { rel: "axons".into(), tuple: vec![p("seed"), p("a"), Value::int(1)] },
+        Event { rel: "axons".into(), tuple: vec![p("seed"), p("b"), Value::int(1)] },
+    ];
+    let outs = eval_reactive(&ir, base, &events, &Ctx::default()).unwrap();
+    assert_eq!(outs.len(), 2); // each axons event fires the subscription
+    assert_eq!(outs[0].rows.len(), 1); // {a}
+    assert_eq!(outs[1].rows.len(), 2); // {a, b}
+}
+
+#[test]
+fn live_host_call_is_a_witness() {
+    let ir = plan(&parse("?[to, px] := axons{from: #seed, to}, px = Host.price(to)").unwrap()).unwrap();
+    let ctx = Ctx {
+        self_neuron: tag_hash("@me"),
+        host: Some(Box::new(|func: &str, _args: &[Value]| {
+            assert_eq!(func, "price");
+            Ok(Value::int(99))
+        })),
+    };
+    let out = eval(&ir, &fixture(), &ctx).unwrap();
+    let px = col(&out, "px");
+    assert!(!out.rows.is_empty());
+    assert!(out.rows.iter().all(|r| r[px] == Value::int(99)));
+
+    // without a host provider the live call is an error
+    let r = eval(&ir, &fixture(), &Ctx::default());
+    assert!(r.is_err(), "live register needs a host provider");
 }
 
 #[test]

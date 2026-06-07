@@ -151,6 +151,8 @@ pub struct Program {
     pub rules: Vec<Rule>,
     pub mutation: Option<Mutation>,
     pub opts: Vec<Opt>,
+    /// Reactive register: re-evaluate when this relation changes (`:subscribe`).
+    pub subscribe: Option<(String, Binds)>,
 }
 
 /// The internal name for the entry rule's relation.
@@ -184,6 +186,7 @@ pub struct IrProgram {
     pub entry: String,
     pub mutation: Option<Mutation>,
     pub opts: Vec<Opt>,
+    pub subscribe: Option<(String, Binds)>,
 }
 
 impl Atom {
@@ -222,6 +225,7 @@ mod tests {
             decls: vec![],
             mutation: None,
             opts: vec![Opt::Limit(20)],
+            subscribe: None,
         };
         assert!(p.entry().is_some());
         assert!(!p.entry().unwrap().head.has_aggr());

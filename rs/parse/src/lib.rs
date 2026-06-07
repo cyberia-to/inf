@@ -88,6 +88,7 @@ impl Parser {
         }
         let mut mutation = None;
         let mut opts = Vec::new();
+        let mut subscribe = None;
         while self.peek() == Some(&Tok::Colon) {
             self.bump();
             let name = self.ident()?;
@@ -121,13 +122,22 @@ impl Parser {
                         _ => return self.err(format!("expected none|some after :assert, found {kind}")),
                     }
                 }
+                "subscribe" => {
+                    let rel = self.ident()?;
+                    let binds = if self.peek() == Some(&Tok::LBrace) {
+                        self.named_binds()?
+                    } else {
+                        Binds::Named(vec![])
+                    };
+                    subscribe = Some((rel, binds));
+                }
                 other => return self.err(format!("unknown directive :{other}")),
             }
         }
         if self.pos < self.toks.len() {
             return self.err(format!("unexpected trailing token {:?}", self.peek()));
         }
-        Ok(Program { decls, rules, mutation, opts })
+        Ok(Program { decls, rules, mutation, opts, subscribe })
     }
 
     fn decl(&mut self) -> Result<Decl, ParseError> {

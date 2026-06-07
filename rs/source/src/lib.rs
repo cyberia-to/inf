@@ -73,6 +73,21 @@ impl LocalSource {
     pub fn has(&self, rel: &str) -> bool {
         self.rels.contains_key(rel)
     }
+
+    /// Append a tuple to a relation (used by the reactive driver to apply a
+    /// mutation event). The relation must already exist.
+    pub fn insert(&mut self, rel: &str, tuple: Tuple) -> Result<(), String> {
+        match self.rels.get_mut(rel) {
+            Some((schema, r)) => {
+                if tuple.len() != schema.arity() {
+                    return Err(format!("insert into `{rel}`: arity mismatch"));
+                }
+                r.insert(tuple);
+                Ok(())
+            }
+            None => Err(format!("insert into unknown relation `{rel}`")),
+        }
+    }
 }
 
 impl RelationSource for LocalSource {

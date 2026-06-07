@@ -85,6 +85,7 @@ pub fn plan(prog: &Program) -> Result<IrProgram, PlanError> {
         entry: ENTRY.to_string(),
         mutation: prog.mutation.clone(),
         opts: prog.opts.clone(),
+        subscribe: prog.subscribe.clone(),
     })
 }
 
