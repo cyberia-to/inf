@@ -64,6 +64,8 @@ pub fn run(f: &Fixed, head: &Head, edges: &[Tuple], ctx: &Ctx) -> Result<Vec<Tup
         "DegreeCentrality" => degree_centrality(&g),
         "ConnectedComponents" => connected_components(&g),
         "BreadthFirstSearch" => bfs_depth(&g, &pos(0)?),
+        "DepthFirstSearch" => dfs_depth(&g, &pos(0)?),
+        "StronglyConnectedComponent" => strongly_connected(&g),
         "ShortestPathBFS" => shortest_path_bfs(&g, &pos(0)?, &pos(1)?),
         "ShortestPathDijkstra" => shortest_path_dijkstra(&g, &pos(0)?, &pos(1)?),
         "TopSort" => top_sort(&g),
@@ -133,6 +135,94 @@ fn bfs_depth(g: &Graph, src: &Value) -> Result<Vec<Tuple>, String> {
         }
     }
     Ok(depth.into_iter().map(|(n, d)| vec![n, Value::Int(d)]).collect())
+}
+
+fn dfs_depth(g: &Graph, src: &Value) -> Result<Vec<Tuple>, String> {
+    let mut depth: BTreeMap<Value, i64> = BTreeMap::new();
+    let mut stack = vec![(src.clone(), 0i64)];
+    while let Some((u, d)) = stack.pop() {
+        if depth.contains_key(&u) {
+            continue;
+        }
+        depth.insert(u.clone(), d);
+        for (v, _) in g.neighbors(&u) {
+            if !depth.contains_key(v) {
+                stack.push((v.clone(), d + 1));
+            }
+        }
+    }
+    Ok(depth.into_iter().map(|(n, d)| vec![n, Value::Int(d)]).collect())
+}
+
+/// Tarjan's strongly-connected components; component id = the smallest node
+/// index in each component, for determinism.
+fn strongly_connected(g: &Graph) -> Result<Vec<Tuple>, String> {
+    let idx: BTreeMap<&Value, usize> = g.nodes.iter().enumerate().map(|(i, v)| (v, i)).collect();
+    let n = g.nodes.len();
+    let mut index = vec![usize::MAX; n];
+    let mut low = vec![0usize; n];
+    let mut on_stack = vec![false; n];
+    let mut stack: Vec<usize> = Vec::new();
+    let mut comp = vec![usize::MAX; n];
+    let mut counter = 0usize;
+
+    // iterative Tarjan to avoid deep recursion
+    for start in 0..n {
+        if index[start] != usize::MAX {
+            continue;
+        }
+        let mut call: Vec<(usize, usize)> = vec![(start, 0)];
+        while let Some((v, mut child)) = call.pop() {
+            if child == 0 {
+                index[v] = counter;
+                low[v] = counter;
+                counter += 1;
+                stack.push(v);
+                on_stack[v] = true;
+            }
+            let succ: Vec<usize> = g
+                .neighbors(&g.nodes[v])
+                .iter()
+                .map(|(t, _)| idx[t])
+                .collect();
+            let mut recursed = false;
+            while child < succ.len() {
+                let w = succ[child];
+                child += 1;
+                if index[w] == usize::MAX {
+                    call.push((v, child));
+                    call.push((w, 0));
+                    recursed = true;
+                    break;
+                } else if on_stack[w] {
+                    low[v] = low[v].min(index[w]);
+                }
+            }
+            if recursed {
+                continue;
+            }
+            if low[v] == index[v] {
+                let root = v;
+                loop {
+                    let w = stack.pop().unwrap();
+                    on_stack[w] = false;
+                    comp[w] = root;
+                    if w == root {
+                        break;
+                    }
+                }
+            }
+            if let Some(&(parent, _)) = call.last() {
+                low[parent] = low[parent].min(low[v]);
+            }
+        }
+    }
+    Ok(g
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, node)| vec![node.clone(), Value::Int(comp[i] as i64)])
+        .collect())
 }
 
 fn reconstruct(prev: &BTreeMap<Value, Value>, a: &Value, b: &Value) -> Value {

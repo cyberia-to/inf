@@ -191,6 +191,22 @@ fn fixed_rule_degree_centrality() {
 }
 
 #[test]
+fn fixed_rule_dfs_and_scc() {
+    let dfs = run("edges[from, to] := axons{from, to}\n?[node, depth] <~ DepthFirstSearch(edges[], #seed)");
+    assert_eq!(dfs.rows.len(), 5); // reaches all nodes
+    let node = col(&dfs, "node");
+    let depth = col(&dfs, "depth");
+    let seed = dfs.rows.iter().find(|r| r[node] == p("seed")).unwrap();
+    assert_eq!(seed[depth], Value::int(0));
+
+    // the fixture is a DAG, so every node is its own strongly-connected component
+    let scc = run("edges[from, to] := axons{from, to}\n?[node, comp] <~ StronglyConnectedComponent(edges[])");
+    let c = col(&scc, "comp");
+    let comps: std::collections::BTreeSet<_> = scc.rows.iter().map(|r| r[c].clone()).collect();
+    assert_eq!(comps.len(), 5);
+}
+
+#[test]
 fn fixed_rule_pagerank_deterministic_and_positive() {
     let q = "edges[from, to] := axons{from, to}\n?[node, rank] <~ PageRank(edges[], iters: 30)";
     let out = run(q);

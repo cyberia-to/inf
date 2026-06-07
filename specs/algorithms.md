@@ -10,7 +10,7 @@ relation of edges and binds algorithm-specific output columns:
 
 ```datalog
 edges[from, to] := axons{from, to}
-?[node, rank] <~ PageRank(edges[], theta: 0.85)
+?[node, rank] <~ PageRank(edges[], theta: 85)   // damping as an integer percent
 ```
 
 the algorithm logic is inf's; the arithmetic is not. linear-algebra cores

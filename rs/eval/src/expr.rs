@@ -121,6 +121,110 @@ pub fn eval_call(c: &Call, b: &Binding, ctx: &Ctx) -> Result<Value, String> {
                 _ => return Err("`in` expects a list as its second argument".into()),
             }
         }
+        "mod" => {
+            arity(2)?;
+            let (x, y) = (a[0].as_int().ok_or("mod: integers")?, a[1].as_int().ok_or("mod: integers")?);
+            if y == 0 {
+                return Err("modulo by zero".into());
+            }
+            Value::Int(x % y)
+        }
+        "neg" => {
+            arity(1)?;
+            match &a[0] {
+                Value::Int(i) => Value::Int(-i),
+                Value::Field(f) => Value::Field(f.neg()),
+                _ => return Err("neg: number".into()),
+            }
+        }
+        "abs" => {
+            arity(1)?;
+            Value::Int(a[0].as_int().ok_or("abs: integer")?.abs())
+        }
+        "length" => {
+            arity(1)?;
+            match &a[0] {
+                Value::List(l) => Value::Int(l.len() as i64),
+                Value::Bytes(b) => Value::Int(b.len() as i64),
+                _ => return Err("length: list or bytes".into()),
+            }
+        }
+        "concat" => {
+            arity(2)?;
+            match (&a[0], &a[1]) {
+                (Value::Bytes(x), Value::Bytes(y)) => {
+                    let mut v = x.clone();
+                    v.extend_from_slice(y);
+                    Value::Bytes(v)
+                }
+                (Value::List(x), Value::List(y)) => {
+                    let mut v = x.clone();
+                    v.extend_from_slice(y);
+                    Value::List(v)
+                }
+                _ => return Err("concat: two bytes or two lists".into()),
+            }
+        }
+        "lowercase" | "uppercase" => {
+            arity(1)?;
+            let s = as_str(&a[0])?;
+            Value::str(&if c.func == "lowercase" { s.to_lowercase() } else { s.to_uppercase() })
+        }
+        "starts_with" | "ends_with" | "str_includes" => {
+            arity(2)?;
+            let (s, t) = (as_str(&a[0])?, as_str(&a[1])?);
+            Value::Bool(match c.func.as_str() {
+                "starts_with" => s.starts_with(&t),
+                "ends_with" => s.ends_with(&t),
+                _ => s.contains(&t),
+            })
+        }
+        "first" | "last" => {
+            arity(1)?;
+            match &a[0] {
+                Value::List(l) => {
+                    let x = if c.func == "first" { l.first() } else { l.last() };
+                    x.cloned().unwrap_or(Value::Null)
+                }
+                _ => return Err("first/last: list".into()),
+            }
+        }
+        "get" => {
+            arity(2)?;
+            match (&a[0], &a[1]) {
+                (Value::List(l), Value::Int(i)) if *i >= 0 => {
+                    l.get(*i as usize).cloned().unwrap_or(Value::Null)
+                }
+                _ => return Err("get: (list, non-negative int)".into()),
+            }
+        }
+        "coalesce" => {
+            arity(2)?;
+            if a[0].is_null() { a[1].clone() } else { a[0].clone() }
+        }
+        "to_int" => {
+            arity(1)?;
+            match &a[0] {
+                Value::Int(i) => Value::Int(*i),
+                Value::Bool(b) => Value::Int(*b as i64),
+                Value::Field(f) => Value::Int(f.val() as i64),
+                Value::Bytes(b) => {
+                    let s = std::str::from_utf8(b).map_err(|_| "to_int: invalid utf8")?;
+                    Value::Int(s.trim().parse().map_err(|_| "to_int: not an integer")?)
+                }
+                _ => return Err("to_int: unsupported value".into()),
+            }
+        }
+        "to_string" => {
+            arity(1)?;
+            let s = match &a[0] {
+                Value::Int(i) => i.to_string(),
+                Value::Bytes(b) => String::from_utf8_lossy(b).to_string(),
+                Value::Bool(b) => b.to_string(),
+                other => format!("{other:?}"),
+            };
+            Value::str(&s)
+        }
         other => return Err(format!("unknown function `{other}`")),
     })
 }
@@ -155,6 +259,13 @@ fn arith(op: &str, x: &Value, y: &Value) -> Result<Value, String> {
                 _ => unreachable!(),
             }))
         }
+    }
+}
+
+fn as_str(v: &Value) -> Result<String, String> {
+    match v {
+        Value::Bytes(b) => Ok(String::from_utf8_lossy(b).to_string()),
+        _ => Err("expected a text value".into()),
     }
 }
 
@@ -195,6 +306,28 @@ mod tests {
         assert_eq!(
             eval_call(&call("in", vec![Term::Int(2), Term::List(vec![Term::Int(1), Term::Int(2)])]), &b, &c).unwrap(),
             Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn string_and_list_functions() {
+        let b = Binding::new();
+        let c = Ctx::default();
+        assert_eq!(
+            eval_call(&call("starts_with", vec![Term::Str("hello".into()), Term::Str("he".into())]), &b, &c).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            eval_call(&call("length", vec![Term::List(vec![Term::Int(1), Term::Int(2)])]), &b, &c).unwrap(),
+            Value::Int(2)
+        );
+        assert_eq!(
+            eval_call(&call("mod", vec![Term::Int(10), Term::Int(3)]), &b, &c).unwrap(),
+            Value::Int(1)
+        );
+        assert_eq!(
+            eval_call(&call("uppercase", vec![Term::Str("ab".into())]), &b, &c).unwrap(),
+            Value::str("AB")
         );
     }
 
