@@ -37,9 +37,9 @@ patterns → zheng like any Trident dialect:
 | [algorithms](algorithms.md) | fixed-rule catalog; bounded; lowering to Ten |
 | [proof](proof.md) | proof contract: result certified against a BBG root; Lens openings |
 | [ir](ir.md) | query-plan IR and Nox-pattern lowering |
-| [extensions](extensions.md) | reactive (`subscribe`) and live registers; their proof contracts (planned) |
-| [interop](interop.md) | calling Tri/Rs/Bt/Ten; called from Rune-pure (planned) |
-| [bootstrap](bootstrap.md) | the four-stage CozoDB migration (planned) |
+| [extensions](extensions.md) | reactive (`subscribe`) and live registers; their proof contracts |
+| [interop](interop.md) | calling Tri/Rs/Bt/Ten; called from Rune-pure |
+| [bootstrap](bootstrap.md) | the four-stage CozoDB migration |
 | [props/](props/) | design proposals (draft → accepted → implemented) |
 
 reference (queries/functions/algorithms/relations) is canonical and lives here,
@@ -49,6 +49,7 @@ counterparts supersede them.
 
 ## status
 
-drafting. language, grammar, cost, relations, functions, algorithms, proof, ir
-are written; extensions, interop, bootstrap remain. the plan and sequencing live
-in .claude/plans/inf-spec-plan.md.
+first draft complete — language, grammar, cost, relations, functions,
+algorithms, proof, ir, extensions, interop, bootstrap, and the query-modes
+proposal. next: a refinement pass and the rs/ implementation. the plan and
+sequencing live in .claude/plans/inf-spec-plan.md.
