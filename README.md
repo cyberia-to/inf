@@ -45,16 +45,16 @@ anyone.
 :assert none            // empty result, proven — I broke no rule
 ```
 
-## shape — provable mass updates
+## shape — provable, append-only
 
-a signal is a set of [[cyberlinks]], and inf is set-based — so it derives the
-whole set a rule implies over current state and commits it as one staked signal.
-the proof certifies the change touched exactly these links and no others.
+the cybergraph is append-only — you add links and withdraw conviction, never edit
+in place. inf derives the whole set a rule implies and commits it as one staked
+signal; the proof certifies the change touched exactly the set it claimed. mutable
+views — a filesystem, a database — layer on top, realized as appends.
 
 ```datalog
-// relink every axon under #old to #new, in one signal
-stale[from] := axons{from, to: #old}, cyberlinks{neuron: @me, from}
-?[from] := stale[from]
+// link every axon under #old also to #new, in one signal
+?[from] := axons{from, to: #old}, cyberlinks{neuron: @me, from}
 :link { neuron: @me, from, to: #new }
 ```
 
@@ -78,7 +78,7 @@ any past block, graph-wide invariants, and provable bulk migrations.
 - declarative and set-based — state the pattern; inf finds the set, for both
   reads and writes. recursive joins, aggregation, and graph algorithms as rules.
 - the imperative twin is [[rune]] — rune scripts per-item, reactive effects; inf
-  derives and mass-updates whole sets. same graph, two paradigms.
+  derives and appends whole sets in bulk. same graph, two paradigms.
 - exact — values are field elements, never floats. arithmetic delegates to
   siblings: [[Trident|Tri]] (field), [[Rs]] (bytes), [[Bt]] (bits),
   [[Ten]] (vectors).

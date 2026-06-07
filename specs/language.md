@@ -128,43 +128,57 @@ keys.
 semi-lattice operators (`min`, `max`, `union`, `intersection`) are admissible
 inside recursive rules because they converge monotonically.
 
-## mutation — declarative mass update
+## mutation — bulk append
 
-a [[signal]] is a staked, signed batch of [[cyberlinks]]. inf is set-based, so it
-is the natural way to construct one: a rule derives a set of links from a pattern
-over the current state, and a mutation op (`:link` / `:unlink`) asserts or
-retracts that set in bulk. this is inf's distinctive power — mass update —
-complementing [[rune]]'s imperative, per-item effects. both surfaces mutate
-through cybergraph → [[bbg]]; neither writes a store directly.
+the cybergraph is append-only (axiom A3): cyberlinks are never edited or deleted,
+and every past state stays queryable through the time dimension. inf's mutation
+half appends. a [[signal]] is a staked, signed batch of [[cyberlinks]], and inf
+is set-based, so it is the natural way to build one: a rule derives a set of links
+from a pattern over the current state, and a mutation op commits that set as a
+signal. this is inf's distinctive power — declarative bulk append — complementing
+[[rune]]'s imperative, per-item effects. both surfaces mutate through
+cybergraph → [[bbg]]; neither writes a store directly.
 
 | op | target | effect |
 |---|---|---|
-| `:link { … }` | canonical | create the derived set of cyberlinks |
-| `:unlink { … }` | canonical | withdraw stake / counter-assert the derived set |
+| `:link { … }` | canonical | append the derived set of cyberlinks |
+| `:unlink { … }` | canonical | append a stake withdrawal over the derived set |
 | `:put` / `:rm` | `_temp` | write a query-local relation (pure intermediate) |
 
-`:link`/`:unlink` are distinct from the `:assert none`/`:assert some` invariant
+`:unlink` does not delete — it appends a withdrawal (reduced conviction) that
+lowers the live aggregate while the original links persist in history. `:link`
+and `:unlink` are distinct from the `:assert none`/`:assert some` invariant
 options, which check a result set rather than mutate.
 
 ```
-// relink every axon under a namespace from #old to #new, in one signal
-stale[from] := axons{from, to: #old}, cyberlinks{neuron: @me, from}
-?[from] := stale[from]
+// link every axon under #old also to #new, in one signal
+?[from] := axons{from, to: #old}, cyberlinks{neuron: @me, from}
 :link { neuron: @me, from, to: #new }
 ```
 
 mutation has two halves:
 
-- derivation — pure and provable. the proof certifies the committed set is
-  exactly what the rule implies over the prior state, complete and nothing extra.
-  this is provable bulk mutation — a migration can prove it touched precisely the
-  right set. the derivation is in the Trident-pure subset.
+- derivation — pure and provable. the proof certifies the appended set is exactly
+  what the rule implies over the prior state, complete and nothing beyond it. a
+  bulk change proves it touched precisely the set it claimed. the derivation is
+  in the Trident-pure subset.
 - commit — an effect. the derived batch becomes a [[signal]], staked and signed
   once by the submitting neuron, then ordered and validated by cybergraph. the
   commit sits outside the pure subset, the way [[rune]]'s `host`/`hint` do.
 
 canonical relations (`cyberlinks`, `axons`, …) are mutated only as signals;
 `:put`/`:rm` to underscore-prefixed temp relations stay pure and local.
+
+## mutable views: filesystem and database
+
+move, rename, delete, update, upsert — the mutable operations of a filesystem or
+a database — are notions layered on top of the append-only graph, not primitives
+of it. inf realizes their bulk forms as appends: supersession (the latest
+assertion by a neuron under a name wins), withdrawal (`:unlink`), and tombstones.
+a migration at the filesystem or database layer is a declarative inf rule that
+appends links to the new target and withdraws conviction from the old; the live
+view migrates while the history persists. the layer above sees update and delete;
+underneath, the graph only ever grows.
 
 ## bounded recursion
 

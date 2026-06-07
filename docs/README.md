@@ -92,10 +92,11 @@ rather than asking to be believed.
 
 ## what you can change
 
-mutation is the mirror of query. a rule derives the set of links to assert or
-retract; inf commits that set as one signal. the proof certifies the committed
-batch is exactly what the rule implies over the prior state — complete, and
-nothing beyond it.
+the cybergraph is append-only (axiom A3): cyberlinks are never edited or deleted,
+and every past state stays queryable. so mutation is the mirror of query as an
+append — a rule derives the set of links to add or withdraw, and inf commits that
+set as one signal. the proof certifies the appended batch is exactly what the rule
+implies over the prior state.
 
 ### mass assertion
 
@@ -107,18 +108,6 @@ nothing beyond it.
 
 proof certifies: exactly the matching particles were linked.
 
-### migration and relink
-
-```datalog
-// move every one of my links from #old to #new, in one signal
-stale[from] := axons{from, to: #old}, cyberlinks{neuron: @me, from}
-?[from] := stale[from]
-:link { neuron: @me, from, to: #new }
-```
-
-proof certifies: every affected link was moved; the rewrite is complete. a
-migration no longer asks you to trust that the script was correct — it proves it.
-
 ### mass withdrawal
 
 ```datalog
@@ -127,14 +116,33 @@ migration no longer asks you to trust that the script was correct — it proves 
 :unlink { neuron: @me, to }
 ```
 
-proof certifies: exactly the stale links were withdrawn.
+proof certifies: exactly the stale links were withdrawn. `:unlink` appends a
+withdrawal — conviction drops and the live aggregate shifts, while the original
+links remain in history.
 
-### curation and merge
+### migration and curation
 
-near-duplicate detection finds particles that should be one; a single signal
-relinks them to a canonical particle. the proof certifies the merge set is
-precisely the duplicates and nothing else — bulk curation anyone can audit from
-the root.
+a migration links a set to a new target and withdraws conviction from the old; a
+merge relinks duplicates to a canonical particle. both are declarative rules that
+compile to one signal of appends.
+
+```datalog
+// link every axon under #old also to #new, in one signal
+?[from] := axons{from, to: #old}, cyberlinks{neuron: @me, from}
+:link { neuron: @me, from, to: #new }
+```
+
+proof certifies: every matching link was added; the change is complete. a
+migration no longer asks you to trust that a script ran correctly — it proves it,
+and because the graph is append-only the old state stays auditable beside the new.
+
+### mutable views — filesystem and database
+
+move, rename, delete, update — the mutable verbs of a filesystem or a database —
+are notions layered on top of the append-only graph. inf realizes their bulk
+forms as appends: supersession (the latest assertion under a name wins),
+withdrawal, and tombstones. the layer above sees update and delete; underneath,
+the graph only ever grows.
 
 a mutation has two halves. the derivation is pure and provable, in the
 Trident-pure subset. the commit is the effect: the derived batch becomes a
