@@ -49,7 +49,7 @@ cargo run -p inf-cli -- cost query.inf
 | functions.md | complete | math (add/sub/mul/div/mod/neg/abs/pow/signum/min/max); comparison + logical + `in`; string (length, concat, case, trim, chars, reverse, slice, starts/ends/includes); list (first, last, get, slice, sorted, reverse, prepend, append, union/intersection/difference); vector (vec, ip_dist, l2_dist — exact integer); regex (matches/replace/extract); json (is_json, json_get); coalesce, to_int, to_string; aggregations count/sum/min/max/mean/collect/unique/union. excluded by design: transcendentals, random, `now` (clock), cos_dist/normalize (need fixed-point) and time/validity (bbg time dimension). |
 | algorithms.md | complete | PageRank, DegreeCentrality, ClosenessCentrality, BetweennessCentrality (Brandes), ConnectedComponents, StronglyConnectedComponent, LabelPropagation, ClusteringCoefficients, CommunityDetectionLouvain (single-level greedy), BFS, DFS, ShortestPathBFS, ShortestPathDijkstra, ShortestPathAStar, KShortestPathYen, MinimumSpanningForestKruskal, TopSort, RandomWalk (committed seed). fractional metrics are fixed-point scaled (×10⁶, no float); `theta` is an integer percent. |
 | cost.md | partial | `inf cost` reports a static estimate with a reads/combine/recursion breakdown over the IR and source sizes; the full committed-GraphStats model needs bbg. |
-| ir.md | partial | IR (strata) implemented; nox lowering implemented for the expression layer (real nox VM); full relational lowering (look-scans, compose-joins, bounded-compose recursion) planned. |
+| ir.md | partial | IR (strata) implemented; nox lowering runs query expressions over relation-tuple columns on the real nox VM (subject/axis access); full relational lowering as one trace (look-scans, compose-joins, bounded-compose recursion) remains. |
 | proof.md | planned | stage 4 (zheng proofs). |
 | extensions.md | implemented | reactive (`:subscribe` + `eval_reactive` event driver) and live (`Host.fn(..)` witness via a host provider); their event-log/witness-conditional proofs come with R2 (zheng). |
 | bootstrap.md | stage 2 complete | parse→IR→eval is the working reference engine; stage 3 = expression lowering on real nox; stages 3-remainder and 4 planned. cozo differential oracle wired (rs/oracle). |
@@ -61,7 +61,9 @@ cargo run -p inf-cli -- cost query.inf
   closure, aggregation, negation, `:assert`, mutation batch, infix arithmetic,
   and the fixed-rule algorithms.
 - `inf-lower` differential tests: nox-VM result == reference engine result for
-  arithmetic expressions, on the production `nox` crate.
+  arithmetic expressions and for expressions over relation-tuple columns
+  (subject/axis), on the production `nox` crate.
+- reactive (`eval_reactive`) and live (`Host` witness) register tests.
 - the `inf` CLI runs the spec-example queries (discovery, policy, reachability,
   PageRank, mutation) end-to-end with correct results.
 - the differential oracle (rs/oracle) asserts inf-eval == CozoDB on filter,

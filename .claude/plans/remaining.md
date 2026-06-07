@@ -1,14 +1,13 @@
 # inf — remaining work
 
-status: 2026-06-07. the core language is built and verified in inf/rs (9 crates,
-50 tests, 0 warnings): parse → plan → eval with recursion, aggregation,
-negation, mutation derivation, fixed-rule algorithms, a CLI, and a stage-3
-expression lowering onto the real nox VM. this plan is everything still missing
-against the specs. compliance map: inf/rs/README.md.
-
-ordering: do the quick-wins + oracle first (they harden what exists), then the
-headline relational lowering, then proofs; the source/extension/tail tracks can
-run in parallel.
+status: 2026-06-07. the LANGUAGE is feature-complete and verified in inf/rs
+(60 tests, 0 warnings): parse → plan → eval with recursion, aggregation,
+negation, mutation derivation, the full function library, every graph algorithm,
+reactive + live registers, a CLI, a cozo differential oracle, and nox lowering of
+query expressions over tuple columns. DONE: R0, R4, R5; R1 partial. remaining:
+the R1 backend (full relational lowering as one nox trace), R2 (zheng proofs),
+R3 (bbg/cybergraph sources) — the proof/storage backend. compliance map:
+inf/rs/README.md.
 
 ## R0 — quick wins and the oracle  (DONE 2026-06-07)
 
@@ -24,9 +23,15 @@ run in parallel.
 - `cost`: reads / combine / recursion breakdown in the CLI. committed-GraphStats
   part still waits on R3 (bbg).
 
-## R1 — relational nox lowering (stage 3 complete)
+## R1 — relational nox lowering (stage 3 complete)  (PARTIAL)
 
-the headline. extend inf-lower from expressions to whole queries, executed on the
+DONE: inf-lower runs query expressions (arithmetic) and expressions over
+relation-tuple columns (subject/axis) on the real nox VM, differential-tested vs
+inf-eval. REMAINING: whole queries as one nox trace — the items below. this is a
+real Nock-style compiler (fold/join/recursion formulas) and the main path to
+provability; ~5 sessions.
+
+extend inf-lower from expressions to whole queries, executed on the
 real nox VM and differential-tested against inf-eval.
 
 - noun encoding. design the nox representation of a tuple (cons of field/hash
@@ -76,33 +81,28 @@ replace LocalSource with real committed state.
 verify: queries over a real bbg snapshot; privacy scope tests; cost = committed.
 depends on: bbg usability. estimate: ~3–5 sessions.
 
-## R4 — reactive and live registers (extensions)
+## R4 — reactive and live registers  (DONE 2026-06-07)
 
-beyond the pure register (extensions.md).
+- reactive: `:subscribe rel{..}` parsed; `eval_reactive(ir, source, events, ctx)`
+  applies each event and re-evaluates when it matches the subscription. the event
+  log is the witness sequence.
+- live: `Host.fn(args)` resolved by a `HostFn` provider on `Ctx` as a witness;
+  no provider → error. the pure builtins are untouched.
+- event-log/witness-conditional PROOFS arrive with R2 (zheng); the registers and
+  their execution semantics are in place and tested.
 
-- reactive: parse `:subscribe sel`; a driver that re-evaluates on matching
-  mutation events; event-log-conditional proof.
-- live: `Host.fetch(...)` as a witness-bearing call; the proof is conditional on
-  the external result.
-- enforce the one-way boundary: reactive/live inputs never enter the pure subset.
+## R5 — builtin and algorithm tail  (DONE 2026-06-07)
 
-verify: a subscription re-fires and re-derives; witness-conditional proof shape.
-estimate: ~2–4 sessions.
-
-## R5 — builtin and algorithm tail
-
-mechanical breadth against functions.md / algorithms.md.
-
-- functions: vector (→ Ten: vec, cos_dist, l2_dist), json (parse/dump/get),
-  regex (match/replace/extract), time (validity, format/parse). transcendentals
-  and random stay excluded from the pure subset by design.
-- algorithms: DepthFirstSearch (done), LabelPropagation, ClusteringCoefficients,
-  KShortestPathYen, ShortestPathAStar, MinimumSpanningForest, RandomWalk
-  (committed-seed). fractional ones (Betweenness, Closeness, Louvain) need a
-  fixed-point representation like PageRank.
-
-verify: per-function and per-algorithm tests against hand-computed results.
-estimate: ~2–3 sessions.
+- functions: math (pow/signum/…), string (trim/chars/reverse/slice/…), list
+  (sorted/prepend/append/union/intersection/difference/…), vector (vec/ip_dist/
+  l2_dist — exact integer), regex (matches/replace/extract via `regex`), json
+  (is_json/json_get via `serde_json`). excluded by design: transcendentals,
+  random, `now`, cos_dist (fixed-point), time/validity (bbg).
+- algorithms: ClosenessCentrality, BetweennessCentrality (Brandes),
+  LabelPropagation, ClusteringCoefficients, CommunityDetectionLouvain (single-
+  level greedy), KShortestPathYen, ShortestPathAStar, MinimumSpanningForest
+  (Kruskal), RandomWalk (committed seed) — added to the earlier PageRank/degree/
+  components/SCC/BFS/DFS/Dijkstra/TopSort. fractional metrics fixed-point scaled.
 
 ## sequencing
 
