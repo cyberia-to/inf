@@ -6,17 +6,19 @@ alias: Inf, infer, inference language, datalog, CozoScript, cozodb, inf language
 ---
 # inf
 
-ask the [[cybergraph]] a question; get back an answer you can prove.
+ask the [[cybergraph]] anything, and reshape it — every answer and every update
+carries a proof.
 
-inf is the query language of the cybergraph — proof language #10 of 14. you
-write what you want to know; inf returns the result together with a [[zheng]]
-proof that it follows from the graph's committed state. a light client holding
-only the 32-byte graph root checks that proof in microseconds — without storing
-the graph, and without trusting whoever computed the answer.
+inf is the query-and-mutation language of the cybergraph — proof language #10 of
+14. you write what you want to know, or what you want the graph to become; inf
+returns the result, or commits the change, with a [[zheng]] proof that it follows
+from the graph's committed state. a light client holding only the 32-byte graph
+root checks that proof in microseconds — without storing the graph, without
+trusting whoever ran it.
 
-## questions inf answers
+two things, both set-based, both proven.
 
-every answer below comes with a proof against a [[bbg]] root.
+## ask — provable answers
 
 ```datalog
 // discovery — the 20 particles I linked, ranked by focus
@@ -27,28 +29,16 @@ every answer below comes with a proof against a [[bbg]] root.
 ```
 
 ```datalog
-// reachability — can I get from one particle to another through links?
-reachable[p] := axons{from: #seed, to: p}
-reachable[p] := reachable{mid}, axons{from: mid, to: p}
-?[] := reachable{#goal}
-:assert some            // the proof shows a path exists
-```
-
-```datalog
-// policy — prove every particle I linked is above a focus floor
+// policy — prove every particle I linked clears a focus floor
 ?[p] := cyberlinks{neuron: @me, to: p}, focus{particle: p, score}, lt(score, FLOOR)
 :assert none            // empty result, proven — I broke no rule
 ```
 
-```datalog
-// accounting — total conviction the graph holds on an axon
-?[weight_sum] := axons{from: #a, to: #b, weight_sum}
-```
+## reshape — provable mass updates
 
-inf also updates — in bulk. a signal is a set of cyberlinks, and inf is
-set-based, so it derives the whole set from a pattern and commits it as one
-staked signal. the derivation is provable: the mass update touched exactly these
-and no others.
+a signal is a set of [[cyberlinks]], and inf is set-based — so it derives the
+whole set a rule implies over current state and commits it as one staked signal.
+the proof certifies the change touched exactly these links and no others.
 
 ```datalog
 // relink every axon under #old to #new, in one signal
@@ -57,33 +47,36 @@ stale[from] := axons{from, to: #old}, cyberlinks{neuron: @me, from}
 :link { neuron: @me, from, to: #new }
 ```
 
-more in the [whitepaper](docs/) — paths and shortest linkchains, provenance of
-your own links, communities and bridge particles, vector-similar particles,
-historical state at any past block, and graph-wide invariants.
+more in the [whitepaper](docs/) — paths and shortest linkchains, provenance,
+communities and bridge particles, vector-similar particles, historical state at
+any past block, graph-wide invariants, and provable bulk migrations.
 
-## why a proven answer is worth more
+## why a proof changes everything
 
-- ask once, verify forever — the answer is a portable proof. anyone re-checks it
-  from the root; proven answers are memoized into the graph as reusable facts.
-- trustless — you do not have to trust the node that ran the query.
-- agents prove they followed the rules — an agent shows it only linked
-  high-karma particles, rather than asking to be believed.
-- you know the cost before you run it — `inf cost` reports a cycle ceiling up
-  front.
+- ask once, verify forever — answers are portable proofs, re-checked from the
+  root and memoized into the graph as reusable facts.
+- trustless — you check the proof, not the node that ran the query.
+- provable compliance — an agent proves it followed its policy instead of asking
+  to be believed.
+- provable migrations — a bulk change proves it touched exactly the right set,
+  complete and nothing extra, before it commits.
+- cost known up front — `inf cost` reports a cycle ceiling before you run.
 
 ## how it works
 
-- declarative — state what to derive, not how. recursive joins, aggregation,
-  and graph algorithms, all as rules.
+- declarative and set-based — state the pattern; inf finds the set, for both
+  reads and writes. recursive joins, aggregation, and graph algorithms as rules.
+- the imperative twin is [[rune]] — rune scripts per-item, reactive effects; inf
+  derives and mass-updates whole sets. same graph, two paradigms.
 - exact — values are field elements, never floats. arithmetic delegates to
   siblings: [[Trident|Tri]] (field), [[Rs]] (bytes), [[Bt]] (bits),
   [[Ten]] (vectors).
-- the declarative twin of [[rune]] — same graph, two paradigms: rune mutates it
-  imperatively, inf queries and mass-updates it declaratively.
+- both reads and writes route through cybergraph → [[bbg]]; canonical mutations
+  commit as staked signals, never a direct store write.
 
-| register | reads | proof |
+| register | acts on | proof |
 |---|---|---|
-| pure | committed graph snapshot | unconditional |
+| pure | a committed snapshot | unconditional |
 | reactive | graph mutations (`subscribe`) | conditional on the event log |
 | live | external systems | witness-based |
 
@@ -92,7 +85,7 @@ historical state at any past block, and graph-wide invariants.
 bootstrapping on CozoDB (vendored in rs/cozo), which shrinks to zero as inf
 self-hosts onto [[nox]].
 
-- the whitepaper — docs/ (what you can ask, and why the answers hold)
+- the whitepaper — docs/ (what you can ask, what you can change, why it holds)
 - the specification — specs/ (language, grammar, cost, …)
 
 cyber license: don't trust. don't fear. don't beg.
