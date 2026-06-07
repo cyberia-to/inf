@@ -6,7 +6,7 @@ alias: Inf, infer, inference language, datalog, CozoScript, cozodb, inf language
 ---
 # inf
 
-ask the [[cybergraph]] anything, and reshape it — every answer and every update
+ask the [[cybergraph]] anything, and shape it — every answer and every update
 carries a proof.
 
 inf is the query-and-mutation language of the cybergraph — proof language #10 of
@@ -45,7 +45,7 @@ anyone.
 :assert none            // empty result, proven — I broke no rule
 ```
 
-## reshape — provable mass updates
+## shape — provable mass updates
 
 a signal is a set of [[cyberlinks]], and inf is set-based — so it derives the
 whole set a rule implies over current state and commits it as one staked signal.

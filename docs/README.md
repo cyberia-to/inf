@@ -5,7 +5,7 @@ crystal-domain: cyber
 ---
 # inf — a whitepaper
 
-inf is how you interrogate and reshape a provable graph. you ask the
+inf is how you interrogate and shape a provable graph. you ask the
 [[cybergraph]] a question and get an answer; you describe a change and the graph
 takes it. either way the result comes with a [[zheng]] proof that it follows from
 the graph's committed state, and anyone holding the 32-byte graph root can check
@@ -24,7 +24,7 @@ inf does two things over the cybergraph, both set-based, both provable.
 
 - ask — derive facts from committed state. a query returns a result and a proof
   that the result follows from the graph at a given root.
-- reshape — commit a derived set of [[cyberlinks]] as one staked signal. a mass
+- shape — commit a derived set of [[cyberlinks]] as one staked signal. a mass
   update changes the graph and proves the change touched exactly the right set.
 
 the second half matters as much as the first. a [[signal]] is a set of
@@ -176,7 +176,7 @@ direction.
   decide, act, loop. it builds a signal one action at a time.
 - inf is declarative and set-based — derive a whole set from a pattern, to return
   it or commit it. it is the analytical and migration surface: rank, traverse,
-  aggregate, and reshape in bulk. it builds a signal as the set a rule implies.
+  aggregate, and shape in bulk. it builds a signal as the set a rule implies.
 
 they compose: rune logic can invoke an inf derivation for a bulk step; inf
 results feed rune decisions. and they are the right tools for opposite shapes of
@@ -334,7 +334,7 @@ proven answer, memoized into the graph, makes the next question cheaper.
 on the write side: knowledge evolves provably. a migration, a dialect-driven
 rewrite, a mass curation — each proves it touched exactly the right set, complete
 and nothing extra, checkable from a 32-byte root. shared knowledge can be
-reshaped in bulk without a custodian everyone has to trust to have run the script
+shaped in bulk without a custodian everyone has to trust to have run the script
 correctly.
 
 together they make the cybergraph a living, collectively-maintained body of
