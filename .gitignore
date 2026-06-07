@@ -1,0 +1,10 @@
+# CozoDB bootstrap fork — local reference for study, not vendored into inf
+# history. we vendor the parts we actually rewrite as we rewrite them.
+rs/cozo/
+
+# Rust build artifacts (for the inf implementation under rs/)
+target/
+**/*.rs.bk
+Cargo.lock
+
+.DS_Store
