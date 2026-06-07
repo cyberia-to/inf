@@ -2,7 +2,7 @@
 # carries its own workspace, so it is excluded here.
 [workspace]
 resolver = "2"
-members = ["value", "ast", "lex", "parse", "source", "plan"]
+members = ["value", "ast", "lex", "parse", "source", "plan", "eval"]
 exclude = ["cozo"]
 
 [workspace.package]

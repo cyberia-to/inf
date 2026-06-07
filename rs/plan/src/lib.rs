@@ -88,15 +88,19 @@ pub fn plan(prog: &Program) -> Result<IrProgram, PlanError> {
     })
 }
 
-/// Derived relations a rule depends on, with strictness (negation/aggregation).
+/// Derived relations a rule depends on, with strictness (must be a lower
+/// stratum). Negation and aggregation are strict. The entry rule `?` is forced
+/// strictly above its dependencies so it observes the final, fully-computed
+/// relations — a non-recursive projection never shares a stratum with the
+/// recursion it reads.
 fn derived_deps(r: &Rule, derived: &HashSet<String>) -> Vec<(String, bool)> {
-    let aggr = r.head.has_aggr();
+    let base_strict = r.head.has_aggr() || r.head.name.is_none();
     let mut out = Vec::new();
     for a in &r.body {
         match a {
             Atom::Read { rel, .. } | Atom::Apply { rule: rel, .. } => {
                 if derived.contains(rel) {
-                    out.push((rel.clone(), aggr));
+                    out.push((rel.clone(), base_strict));
                 }
             }
             Atom::Not(inner) => {
@@ -204,7 +208,7 @@ mod tests {
     #[test]
     fn recursion_is_detected_and_bounded() {
         let p = ir(
-            "reachable[p] := axons{from: #seed, to: p}\nreachable[p] := reachable[mid], axons{from: mid, to: p}\n?[p] := reachable[p]\n:bounded 5",
+            "reachable[p] := axons{from: #seed, to: p}\nreachable[p] := reachable[mid], axons{from: mid, to: p}\n:bounded 5\n?[p] := reachable[p]",
         );
         let rec = p.strata.iter().find(|s| s.recursive).expect("a recursive stratum");
         assert_eq!(rec.bound, Some(5));
