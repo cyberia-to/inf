@@ -61,6 +61,12 @@ fn head_rel(r: &Rule) -> String {
     r.head.name.clone().unwrap_or_else(|| ENTRY.to_string())
 }
 
+/// Evaluate a closed term (no free variables) with the default context. The nox
+/// lowering uses this as the reference value in its differential tests.
+pub fn eval_const_term(t: &Term) -> Result<Value, EvalError> {
+    expr::eval_term(t, &Default::default(), &Ctx::default()).map_err(|m| EvalError { msg: m })
+}
+
 pub fn eval(ir: &IrProgram, src: &dyn RelationSource, ctx: &Ctx) -> Result<Output, EvalError> {
     let mut env: Env = Env::new();
 
