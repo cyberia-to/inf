@@ -111,12 +111,30 @@ brief said reference/, but those repos use specs/ — flagged).
 7. specs/interop.md — calling Tri/Rs/Bt/Ten; being called from Rune-pure; the
    one-way boundary (Rune-pure ⊃ INF-pure ⊃ Trident grammar; no
    non-determinism smuggled back).
-8. specs/bootstrap.md — the 4-stage CozoDB shrink + benchmark scoreboard.
-9. specs/props/query-modes.md — recast as data-source ↔ register mapping
+8. specs/relations.md — relation model: views over committed bbg state,
+   visibility/privacy scopes, snapshot read, append-only mutation surface, temp
+   relations, mutable fs/db views on top. (canonical rewrite of docs/stored
+   relations + part of docs/cybergraph.)
+9. specs/functions.md — builtin reference; field-element semantics, arithmetic
+   delegated to Tri/Rs/Bt/Ten. (canonical rewrite of docs/functions.)
+10. specs/algorithms.md — fixed-rule catalog (PageRank, Dijkstra, Louvain, …);
+   lowers arithmetic to Ten; bounded. (canonical rewrite of docs/algorithms.)
+11. specs/bootstrap.md — the 4-stage CozoDB shrink + benchmark scoreboard;
+   summarizes the cozo surface (CozoScript syntax, :put/%if) rather than
+   duplicating it as graph pages.
+12. specs/props/query-modes.md — recast as data-source ↔ register mapping
    (already drafted; privacy resolved).
 
-dropped from v1: arithmetic.md (→ Tri), relations.md (→ language+proof),
-vector.md (→ Ten/interop), transactions.md (bootstrap-only → bootstrap.md).
+reference belongs in specs/, not docs/ — queries/functions/algorithms/stored-
+relations are reference (canonical), not explanation. the five cozo pages in
+docs/ are superseded as their specs/ counterparts land: queries → language +
+grammar; stored relations → relations; functions → functions; algorithms →
+algorithms; cybergraph → relations + interop. docs/ keeps the whitepaper
+(README) plus future tutorials/guides. cozo-specifics live in rs/cozo +
+bootstrap.md.
+
+dropped from v1: arithmetic.md (→ Tri), vector.md (→ Ten/interop + algorithms),
+transactions.md (bootstrap-only → bootstrap.md).
 
 ## read-first before writing specs (brief's list, paths corrected)
 

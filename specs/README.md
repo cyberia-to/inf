@@ -32,6 +32,9 @@ patterns → zheng like any Trident dialect:
 | [language](language.md) | syntax, types, value model, rules, bounded recursion, the pure subset |
 | [grammar](grammar.md) | formal EBNF; productions shared with Trident marked |
 | [cost](cost.md) | static cost model; the bbg ↔ inf interface |
+| [relations](relations.md) | relation model: views, visibility, snapshot reads, append-only mutation, temp relations |
+| [functions](functions.md) | builtin reference; field-element semantics, delegation to Tri/Rs/Bt/Ten (planned) |
+| [algorithms](algorithms.md) | fixed-rule catalog; lowering to Ten (planned) |
 | [proof](proof.md) | proof contract: result certified against a BBG root; Lens openings (planned) |
 | [ir](ir.md) | query-plan IR and Nox-pattern lowering (planned) |
 | [extensions](extensions.md) | reactive (`subscribe`) and live registers; their proof contracts (planned) |
@@ -39,7 +42,12 @@ patterns → zheng like any Trident dialect:
 | [bootstrap](bootstrap.md) | the four-stage CozoDB migration (planned) |
 | [props/](props/) | design proposals (draft → accepted → implemented) |
 
+reference (queries/functions/algorithms/relations) is canonical and lives here,
+not in docs/. docs/ holds the whitepaper and teaching material; the five
+CozoScript pages there document the bootstrap surface until their specs/
+counterparts supersede them.
+
 ## status
 
-drafting. language, grammar, cost are first. the plan and sequencing live in
-.claude/plans/inf-spec-plan.md.
+drafting. language, grammar, cost, relations are first. the plan and sequencing
+live in .claude/plans/inf-spec-plan.md.

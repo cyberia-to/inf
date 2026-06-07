@@ -1,0 +1,102 @@
+---
+tags: cyber, soft3, inf
+crystal-type: spec
+crystal-domain: cyber
+---
+# inf relations
+
+how [[inf]] sees, scopes, reads, and appends to the cybergraph relations. the
+canonical relation schemas (columns, keys, types) live in cybergraph/specs/query.md
+— this file defines inf's use of them, not their shape. inf owns no storage; the
+relations are views over committed [[bbg]] state.
+
+## the relation set
+
+| relation | role | inf access |
+|---|---|---|
+| `cyberlinks` | the base assertions | read (scoped); append via `:link`/`:unlink` |
+| `particles` | nodes; enter by being linked (A4) | read |
+| `neurons` | agents — focus, karma, stake | read |
+| `signals` | finalized assertion batches | read |
+| `axons` | derived aggregate weight between two particles | read |
+| `focus` | φ* per particle, from [[tru]] | read |
+| `karma` | per neuron, from [[tru]] | read |
+
+types follow the canonical schema: content-addressed identifiers are `Bytes`
+(32-byte digests), counts and amounts are `Int`. inf has no floating point;
+`focus` and `karma` are field elements as committed (see [language](language.md)).
+
+## what is base and what is derived
+
+only `cyberlinks` is written. every other relation is a function of the
+cyberlinks and signals:
+
+- `particles` appear when a cyberlink references them (A4).
+- `axons` aggregate the cyberlinks between two particles (A6).
+- `focus`, `karma` are computed by [[tru]] and committed back into bbg.
+- `signals` record which batches finalized.
+
+so inf's mutation surface is a single base relation — `cyberlinks` — appended as
+assertions or withdrawals. the derived relations recompute as a consequence; inf
+never writes them directly. writing `axons`, `focus`, or `karma` is rejected.
+
+## visibility and scope
+
+- `axons` — public aggregate. any caller scans it.
+- `cyberlinks` — neuron-scoped. a scan returns the caller's own links (plaintext,
+  from the personal owner store) and links the caller holds an opening key for; a
+  bare public scan returns nothing. individual cyberlinks are private (the
+  commitment polynomial A(x) in [[bbg]]); the public face is `axons`.
+- `particles`, `neurons`, `signals`, `focus`, `karma` — public committed state.
+
+`axons` answer "what does the graph say"; `cyberlinks` answer "what did I assert."
+
+## read model
+
+reads resolve against a committed snapshot at a graph root. a read lowers to the
+[[nox]] `look` pattern and carries a [[lens]] opening against the root, so each
+returned row is provable (see proof). consistency follows cybergraph/specs/query.md:
+`cyberlinks`, `particles`, `neurons`, `signals` are consistent at the latest
+accepted height; `axons` updates in the same transaction; `focus` and `karma` lag
+by one tru cycle.
+
+a query may name relations from the mode it is bound to (see
+[props/query-modes](props/query-modes.md)): bbg mode exposes the raw committed
+relations; cybergraph mode adds derived/normalized relations, tru-fresh
+`focus`/`karma`, and particle content.
+
+## mutation — append only
+
+the cybergraph is append-only (axiom A3). inf mutates by appending cyberlinks:
+
+- `:link { … }` — append the derived set of cyberlinks (assertions).
+- `:unlink { … }` — append a stake withdrawal over the derived set; conviction
+  drops and the live `axons` shift, while the original links persist in history.
+
+both compile to one [[signal]] — a staked, signed batch — committed through
+cybergraph → bbg. canonical relations are mutated only as signals. the
+derivation of the set is pure and provable; the commit is the staked effect (see
+[language](language.md), mutation).
+
+## temp relations
+
+relations prefixed with `_` are query-local: they exist only for the duration of
+a query and never reach the graph. `:put`/`:rm` write them; they are pure
+intermediates, the only relations inf writes outside the signal path. they live
+as [[nox]] nouns, not in a separate store.
+
+## mutable views — filesystem and database
+
+move, rename, delete, update, upsert are notions layered on top of the
+append-only graph, not relations of it. inf realizes their bulk forms as appends:
+supersession (the latest assertion under a name wins — name resolution is the
+latest cyberlink by neuron and path), withdrawal (`:unlink`), and tombstones. a
+filesystem or database view sees mutable records; underneath, `cyberlinks` only
+ever grows, and every past state stays queryable through the time dimension.
+
+## see also
+
+- cybergraph/specs/query.md — canonical relation schemas (the source of truth)
+- [language](language.md) — value model, rules, mutation
+- [proof](proof.md) — how a read or an appended set certifies against a root
+- [props/query-modes](props/query-modes.md) — which relations each mode exposes
