@@ -5,31 +5,27 @@ crystal-domain: cyber
 ---
 # inf — a whitepaper
 
-inf is how you interrogate and shape a provable graph. you ask the
-[[cybergraph]] a question and get an answer; you describe a change and the graph
-takes it. either way the result comes with a [[zheng]] proof that it follows from
-the graph's committed state, and anyone holding the 32-byte graph root can check
-that proof in microseconds — without the graph, without trusting the node that
-ran it.
+inf is the language of a provable graph. you ask the [[cybergraph]] a question
+and get an answer; you state a change and the graph takes it. both come with a
+[[zheng]] proof that the result follows from the graph's committed state, and
+anyone holding the 32-byte graph root checks that proof in microseconds — without
+the graph, without trusting the node that ran it.
 
-this is the read-write interface to shared, authenticated knowledge, with proofs
-in place of trust. SQL gave you query and update over a database you had to
-trust; inf gives you query and update over a graph nobody has to trust. this
-document is about what that buys you: the questions inf answers, the changes it
-makes, and how it keeps both honest.
+it is the read-write interface to shared, authenticated knowledge, with proof in
+place of trust. SQL gave query and update over a database you had to trust; inf
+gives query and update over a graph nobody has to trust.
 
-## the two halves
+## two operations
 
 inf does two things over the cybergraph, both set-based, both provable.
 
-- ask — derive facts from committed state. a query returns a result and a proof
-  that the result follows from the graph at a given root.
+- ask — derive a set of facts from committed state. a query returns the set and a
+  proof that it follows from the graph at a given root.
 - shape — commit a derived set of [[cyberlinks]] as one staked signal. a mass
-  update changes the graph and proves the change touched exactly the right set.
+  update changes the graph and proves it changed exactly the set the rule implies.
 
-the second half matters as much as the first. a [[signal]] is a set of
-cyberlinks, and inf is set-based, so inf is the natural language for building
-one: state the pattern, and inf finds the whole set — to return it, or to commit
+a [[signal]] is a set of cyberlinks, and inf is set-based, so one language serves
+both: state a pattern, and inf finds the whole set — to return it, or to commit
 it. the short pitch is in the repo README; the canonical definition is in specs/.
 
 ## what you can ask
@@ -96,10 +92,10 @@ rather than asking to be believed.
 
 ## what you can change
 
-mutation is the mirror of query. you write a rule that derives the set of links
-to assert or retract, and inf commits that set as one signal. the proof of a
-change is as strong as the proof of an answer: it certifies the committed batch
-is exactly what the rule implies over the prior state — complete, nothing extra.
+mutation is the mirror of query. a rule derives the set of links to assert or
+retract; inf commits that set as one signal. the proof certifies the committed
+batch is exactly what the rule implies over the prior state — complete, and
+nothing beyond it.
 
 ### mass assertion
 
@@ -109,8 +105,7 @@ is exactly what the rule implies over the prior state — complete, nothing extr
 :link { neuron: @me, from: #topic, to: p }
 ```
 
-proof certifies: exactly the matching particles were linked — none missed, none
-extra.
+proof certifies: exactly the matching particles were linked.
 
 ### migration and relink
 
@@ -141,30 +136,28 @@ relinks them to a canonical particle. the proof certifies the merge set is
 precisely the duplicates and nothing else — bulk curation anyone can audit from
 the root.
 
-a mutation has two halves. the derivation is pure and provable and lives in the
+a mutation has two halves. the derivation is pure and provable, in the
 Trident-pure subset. the commit is the effect: the derived batch becomes a
 signal, staked and signed once by the submitting neuron over the whole batch,
 then ordered and validated by cybergraph — the way [[rune]]'s `host` and `hint`
 sit outside the pure subset. both halves route through cybergraph → [[bbg]]; inf
 never writes a store directly.
 
-## why a proof changes the answer — and the update
+## proof in place of trust
 
-a plain answer is only as trustworthy as the machine that produced it, and a
-plain bulk update is a leap of faith that the script did the right thing. inf
-removes both leaps.
+an answer is only as trustworthy as the machine that produced it; a bulk update
+is a wager that the script did what it claimed. inf removes both gambles.
 
-- ask once, verify forever. answers are portable proofs, re-checked from the
-  32-byte root and memoized into the graph as reusable facts.
+- ask once, verify forever. answers are portable proofs, re-checked from the root
+  and memoized into the graph as reusable facts.
 - trustless reads. a phone relies on an answer computed by a datacenter it has
   never met, by checking the proof.
-- provable compliance. an agent, contract, or market proves a property of its own
+- provable conduct. an agent, contract, or market proves a property of its own
   behavior instead of being audited after the fact.
-- provable, complete mutation. a migration or mass-curation proves it touched
-  exactly the intended set — complete, nothing extra — before it commits. no
-  silent miss, no stray write.
-- cost known in advance. `inf cost` reports a cycle ceiling before a query or an
-  update runs, so a change can be priced and bounded before it is made.
+- provable change. a migration or curation proves it touched exactly the set it
+  claimed, before it commits.
+- cost up front. `inf cost` reports a cycle ceiling before a query or a change
+  runs, so either can be priced and bounded in advance.
 
 ## rune and inf — two paradigms, one graph
 
@@ -332,10 +325,9 @@ market settles on a provable aggregate instead of a quorum's say-so; and every
 proven answer, memoized into the graph, makes the next question cheaper.
 
 on the write side: knowledge evolves provably. a migration, a dialect-driven
-rewrite, a mass curation — each proves it touched exactly the right set, complete
-and nothing extra, checkable from a 32-byte root. shared knowledge can be
-shaped in bulk without a custodian everyone has to trust to have run the script
-correctly.
+rewrite, a mass curation — each proves it touched exactly the set it claimed,
+checkable from the root. shared knowledge can be shaped in bulk without a
+custodian everyone has to trust to have run the script correctly.
 
 together they make the cybergraph a living, collectively-maintained body of
 knowledge: questioned safely, evolved safely, by anyone, from anywhere. ask once,

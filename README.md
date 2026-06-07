@@ -69,8 +69,8 @@ any past block, graph-wide invariants, and provable bulk migrations.
 - trustless — you check the proof, not the node that ran the query.
 - provable compliance — an agent proves it followed its policy instead of asking
   to be believed.
-- provable migrations — a bulk change proves it touched exactly the right set,
-  complete and nothing extra, before it commits.
+- provable migrations — a bulk change proves it touched exactly the set it
+  claimed, before it commits.
 - cost known up front — `inf cost` reports a cycle ceiling before you run.
 
 ## how it works
