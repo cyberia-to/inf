@@ -77,8 +77,9 @@ any past block, graph-wide invariants, and provable bulk migrations.
 
 - declarative and set-based — state the pattern; inf finds the set, for both
   reads and writes. recursive joins, aggregation, and graph algorithms as rules.
-- the imperative twin is [[rune]] — rune scripts per-item, reactive effects; inf
-  derives and appends whole sets in bulk. same graph, two paradigms.
+- the imperative twin is [[rune]] — like JavaScript and SQL: rune scripts
+  per-item, reactive effects; inf derives and appends whole sets in bulk. same
+  graph, two paradigms.
 - exact — values are field elements, never floats. arithmetic delegates to
   siblings: [[Trident|Tri]] (field), [[Rs]] (bytes), [[Bt]] (bits),
   [[Ten]] (vectors).

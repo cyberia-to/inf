@@ -170,7 +170,10 @@ is a wager that the script did what it claimed. inf removes both gambles.
 ## rune and inf — two paradigms, one graph
 
 both [[rune]] and inf read and mutate the cybergraph; the split is paradigm, not
-direction.
+direction. the familiar parallel is JavaScript and SQL — rune is the imperative,
+event-driven surface you script behavior in, inf the declarative, set-based
+surface you query and change the store through. here both run over one graph, and
+both are provable.
 
 - rune is imperative — scripted, per-item, event-driven, with `host` calls and an
   identity-bearing kernel. it is the agent's nervous system: react to an event,
