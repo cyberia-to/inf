@@ -12,15 +12,23 @@ pub type Binding = BTreeMap<String, Value>;
 /// A live-register host provider: resolves `Host.fn(args)` to a witness value.
 pub type HostFn = Box<dyn Fn(&str, &[Value]) -> Result<Value, String>>;
 
+/// Optional nox-path condition evaluator. Returns Some(true) if the condition
+/// holds, Some(false) if it doesn't, or None to fall back to the reference engine.
+/// Used by inf-lower to route arithmetic/comparison conditions through the nox VM
+/// while leaving hash/string conditions on the reference path.
+pub type CondEval = Box<dyn Fn(&Call, &Binding) -> Option<bool>>;
+
 /// Session context: the identity `@me` resolves to, and the optional live host.
 pub struct Ctx {
     pub self_neuron: [u8; 32],
     pub host: Option<HostFn>,
+    /// If set, condition atoms attempt nox evaluation first; fallback on None.
+    pub nox_cond: Option<CondEval>,
 }
 
 impl Default for Ctx {
     fn default() -> Self {
-        Ctx { self_neuron: tag_hash("@me"), host: None }
+        Ctx { self_neuron: tag_hash("@me"), host: None, nox_cond: None }
     }
 }
 
@@ -213,6 +221,23 @@ pub fn eval_call(c: &Call, b: &Binding, ctx: &Ctx) -> Result<Value, String> {
         "coalesce" => {
             arity(2)?;
             if a[0].is_null() { a[1].clone() } else { a[0].clone() }
+        }
+        // type tests (specs/functions.md: type and identity section)
+        "is_null"   => { arity(1)?; Value::Bool(matches!(&a[0], Value::Null)) }
+        "is_int"    => { arity(1)?; Value::Bool(matches!(&a[0], Value::Int(_))) }
+        "is_bytes"  => { arity(1)?; Value::Bool(matches!(&a[0], Value::Bytes(_))) }
+        "is_string" => { arity(1)?; Value::Bool(matches!(&a[0], Value::Bytes(_))) }
+        "is_bool"   => { arity(1)?; Value::Bool(matches!(&a[0], Value::Bool(_))) }
+        "is_list"   => { arity(1)?; Value::Bool(matches!(&a[0], Value::List(_))) }
+        "is_hash"   => { arity(1)?; Value::Bool(matches!(&a[0], Value::Hash(_))) }
+        "is_field"  => { arity(1)?; Value::Bool(matches!(&a[0], Value::Field(_))) }
+        "to_bytes"  => {
+            arity(1)?;
+            match &a[0] {
+                Value::Bytes(b) => Value::Bytes(b.clone()),
+                Value::Int(i) => Value::Bytes(i.to_le_bytes().to_vec()),
+                other => Value::str(&format!("{other:?}")),
+            }
         }
         "to_int" => {
             arity(1)?;
@@ -438,6 +463,21 @@ mod tests {
             eval_call(&call("in", vec![Term::Int(2), Term::List(vec![Term::Int(1), Term::Int(2)])]), &b, &c).unwrap(),
             Value::Bool(true)
         );
+    }
+
+    #[test]
+    fn type_tests_and_conversions() {
+        let b = Binding::new();
+        let c = Ctx::default();
+        assert_eq!(eval_call(&call("is_null",  vec![Term::Int(0)]),          &b, &c).unwrap(), Value::Bool(false));
+        assert_eq!(eval_call(&call("is_null",  vec![Term::Str("".into())]),  &b, &c).unwrap(), Value::Bool(false));
+        assert_eq!(eval_call(&call("is_int",   vec![Term::Int(5)]),          &b, &c).unwrap(), Value::Bool(true));
+        assert_eq!(eval_call(&call("is_int",   vec![Term::Str("x".into())]), &b, &c).unwrap(), Value::Bool(false));
+        assert_eq!(eval_call(&call("is_bytes", vec![Term::Str("a".into())]), &b, &c).unwrap(), Value::Bool(true));
+        assert_eq!(eval_call(&call("is_list",  vec![Term::List(vec![])]),    &b, &c).unwrap(), Value::Bool(true));
+        assert_eq!(eval_call(&call("is_bool",  vec![Term::Bool(true)]),      &b, &c).unwrap(), Value::Bool(true));
+        assert_eq!(eval_call(&call("to_bytes", vec![Term::Int(1)]),          &b, &c).unwrap(),
+            Value::Bytes(1i64.to_le_bytes().to_vec()));
     }
 
     #[test]

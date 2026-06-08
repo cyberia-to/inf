@@ -301,6 +301,7 @@ fn live_host_call_is_a_witness() {
             assert_eq!(func, "price");
             Ok(Value::int(99))
         })),
+        nox_cond: None,
     };
     let out = eval(&ir, &fixture(), &ctx).unwrap();
     let px = col(&out, "px");

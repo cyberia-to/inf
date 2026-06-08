@@ -270,8 +270,17 @@ fn step_atom(
         Atom::Cond(call) => {
             let mut out = Vec::new();
             for b in bindings {
-                let v = eval_call(call, &b, ctx).map_err(|m| EvalError { msg: m })?;
-                if v.truthy() {
+                let passes = if let Some(nox) = &ctx.nox_cond {
+                    match nox(call, &b) {
+                        Some(r) => r,
+                        None => eval_call(call, &b, ctx)
+                            .map_err(|m| EvalError { msg: m })?
+                            .truthy(),
+                    }
+                } else {
+                    eval_call(call, &b, ctx).map_err(|m| EvalError { msg: m })?.truthy()
+                };
+                if passes {
                     out.push(b);
                 }
             }
