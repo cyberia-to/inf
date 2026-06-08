@@ -1,13 +1,16 @@
 # inf — remaining work
 
-status: 2026-06-07. the LANGUAGE is feature-complete and verified in inf/rs
-(60 tests, 0 warnings): parse → plan → eval with recursion, aggregation,
-negation, mutation derivation, the full function library, every graph algorithm,
-reactive + live registers, a CLI, a cozo differential oracle, and nox lowering of
-query expressions over tuple columns. DONE: R0, R4, R5; R1 partial. remaining:
-the R1 backend (full relational lowering as one nox trace), R2 (zheng proofs),
-R3 (bbg/cybergraph sources) — the proof/storage backend. compliance map:
-inf/rs/README.md.
+status: 2026-06-08. the LANGUAGE is feature-complete and verified in inf/rs
+(86 tests default + 10 under `--features bbg`, 0 warnings): parse → plan → eval
+with recursion, aggregation, negation, mutation derivation, the full function
+library, every graph algorithm, reactive + live registers, a CLI, a cozo
+differential oracle, full relational nox lowering (scan + equi-join +
+bounded-recursion trace via look pattern), committed GraphStats, `BbgSource` over
+real committed state (R3b), and zheng proof generation for expression/condition
+traces (R2a). DONE: R0, R1, R2a, R3a, R3b-BbgSource, R4, R5.
+remaining: R2b (full query proof — GATED on the bbg proof door, see
+`bbg/roadmap/provable-reads.md`), R3b tail (CybergraphSource + privacy scoping).
+compliance map: inf/rs/README.md. bbg-integration design: .claude/plans/bbg-integration.md.
 
 ## R0 — quick wins and the oracle  (DONE 2026-06-07)
 
@@ -20,98 +23,150 @@ inf/rs/README.md.
 - temp relations: `_`-prefixed derived relations work as intra-program temps
   (test added). `:put`/`:rm` materialization across statements still waits on
   multi-statement transaction blocks (deferred — needs `{ … }` scripts).
-- `cost`: reads / combine / recursion breakdown in the CLI. committed-GraphStats
-  part still waits on R3 (bbg).
+- `cost`: reads / combine / recursion breakdown in the CLI. uses committed
+  GraphStats (node_count, diameter_bound, max_degree) when available.
 
-## R1 — relational nox lowering (stage 3 complete)  (PARTIAL)
+## R1 — relational nox lowering  (DONE)
 
-DONE: inf-lower runs query expressions (arithmetic) and expressions over
-relation-tuple columns (subject/axis) on the real nox VM, differential-tested vs
-inf-eval. REMAINING: whole queries as one nox trace — the items below. this is a
-real Nock-style compiler (fold/join/recursion formulas) and the main path to
-provability; ~5 sessions.
+### R1a — expression + condition lowering  (DONE 2026-06-07)
 
-extend inf-lower from expressions to whole queries, executed on the
-real nox VM and differential-tested against inf-eval.
+- arithmetic: add/sub/mul lower to nox opcodes 5/6/7. differential-tested.
+- column access: column i at axis 2^(i+2)-2 in the right-nested cons-list
+  subject; `lower_and_run_tuple` evaluates over real relation rows.
+- comparison conditions: lt/gt/eq/ne/le/ge compile to nox formulas where 0 =
+  condition satisfied (nox branch convention). derivations:
+    ne(a,b) = lt(0, eq(a,b))   — 0 when eq=1 (not equal)
+    gt(a,b) = lt(b, a)         — 0 when b<a (a>b)
+    gte(a,b) = eq(lt(a,b), 1)  — 0 when lt=1 (a>=b)
+    le(a,b) = eq(lt(b,a), 1)   — 0 when lt(b,a)=1 (a<=b)
+    and(c1,c2) = add(c1, c2)   — 0 iff both 0
+    or(c1,c2)  = mul(c1, c2)   — 0 iff at least one 0
+    not(c)     = eq(c, 1)      — 0 iff c=1 (was false)
+- `CondEval` callback in eval `Ctx`: `nox_cond: Option<CondEval>` routes each
+  `Atom::Cond` through nox with fallback to reference for non-numeric types.
+- `make_nox_ctx()` in inf-lower: builds a Ctx with nox condition evaluation.
+- whole-query differential test: scan / join / bounded-recursion / eq filter all
+  produce identical result sets via nox and reference engine (5 corpus tests).
 
-- noun encoding. design the nox representation of a tuple (cons of field/hash
-  atoms; Hash = 4 field elements) and a relation (cons-list of tuples). document
-  it; it is the contract for reads and proofs.
-- relation reads → `look` (pattern 17). a LookProvider over the RelationSource:
-  resolve (root, namespace=rel, key) to tuple data. decide the multi-field scheme
-  (look per column, or a tuple-id indirection) since `look` returns one element.
-- joins → `compose`/`axis` over a binding noun; filters/conditions → the existing
-  expression lowering under `branch`; project → `cons`.
-- bounded recursion → a bounded `compose` loop (the `for _ in 0..MAX` shape);
-  aggregation, sort, limit as folds/permutation.
-- differential test: nox execution == inf-eval on the full corpus (discovery,
-  reachability, aggregation, negation, fixed rules).
+### R1b — full relational scan + join via look  (DONE 2026-06-08)
 
-verify: every corpus query matches inf-eval when run through nox.
-estimate: ~5–8 sessions (a real compiler; the hardest piece).
+scan and equi-join queries compiled to static nox look formulas, executed on
+the real nox VM against a LocalLookProvider, differential-tested vs reference.
 
-## R2 — zheng proofs (stage 4)
+- `LocalLookProvider`: implements `LookProvider` + `CallProvider<N>` over
+  LocalSource; key = row_idx * MAX_ARITY + col_idx; ns = relation order index;
+  commitment ignored (LocalSource has no BBG root).
+- `bbg_obj()`: fake BBG subject [[0|[0|[0|0]]] | 0] with all-zero limbs for
+  the look pattern's axis-navigation (axes 4, 10, 22, 23).
+- `nox_vm_scan()`: builds a cons-list formula of look calls, executes on nox,
+  returns rows as Vec<Vec<u64>>. differential-tested against LocalSource scan.
+- `nox_vm_scan_gt()`: scan with gt filter via branch (4): `[4 [lt(thresh,col)
+  [cons(tuple, rest) rest]]]`. 0-branch = include.
+- `nox_vm_equijoin()`: nested scan; join condition = eq(look1, look2); optional
+  gt filter combined via add (0 iff both zero). result = cons-list of tuples.
+- `decode_results()`: traverse cons-list of cons-tuples → Vec<Vec<u64>>.
+- 5 tests: scan_all_rows, scan_single_column, scan_gt_filter,
+  equijoin_matches_reference, equijoin_with_filter_matches_reference.
+- arena limit: N=8192 (stack-safe); supports up to ~8k formula nodes per query.
 
-turn the nox trace into a STARK and make a result certify against a BBG root.
+### R1c — bounded recursion trace  (DONE 2026-06-08)
 
-- wire the nox `Tracer` output → zheng proof generation (SuperSpartan + Brakedown
-  over Lens).
-- relation reads become Lens openings; a multi-row result is a batch opening +
-  the derivation circuit (proof.md).
-- the operator→constraint mapping (select=range check, join=lookup, sort=perm,
-  aggregate=accumulator) from proof.md / bbg/roadmap/verifiable-query.
-- mutation: prove the appended batch is exactly the rule's derivation.
+`nox_vm_bounded_reach(src, edge_rel, from_col, to_col, seed, extra_steps)`.
+- frontier state: Rust `Vec<u64>`, passed as literal constants baked into each
+  iteration's formula (avoids noun encode/decode overhead).
+- step formula: per-edge look(ns=0, row*MAX_ARITY+col) scan; mul-or condition
+  over frontier values (0 iff from-node matches any frontier member); branch
+  includes to-node in cons accumulator.
+- outer loop: base step (from seed), then extra_steps BFS rounds; dedup via
+  `reached` set.
+- 2 tests: 1-hop (extra_steps=1, matches ref :bounded 2) and 2-hop (extra_steps=2,
+  matches ref :bounded 3). Both pass differentially vs reference eval.
 
-verify: proofs check in constant time against a root; size/verify benchmarks.
-depends on: R1, the zheng crate API. estimate: ~3–5 sessions.
+## R2 — zheng proofs  (INITIAL DONE; FULL PENDING)
 
-## R3 — bbg / cybergraph sources + privacy
+### R2a — expression/condition proof  (DONE 2026-06-07)
 
-replace LocalSource with real committed state.
+- `prove_expr(t)` → `(result, TraceProof)`: runs the expression with VecTrace,
+  calls `zheng::commit` with empty hash/axis/look openings (pure arithmetic).
+- `prove_cond(cond, cols, tuple)` → `(holds, TraceProof)`: proves a condition
+  evaluation over a specific tuple.
+- `verify_expr_proof(proof)`: verifies via `zheng::verify`.
+- tests: prove_and_verify_arithmetic_expr, prove_and_verify_condition,
+  prove_and_verify_tuple_condition (3 tests under `--features prove`).
+- gated: `inf-lower/Cargo.toml [features] prove = ["dep:zheng", "nox/brakedown"]`.
 
-- BbgSource: RelationSource over bbg's ShardStore + committed GraphStats
-  (node_count, relation_sizes, max_degree, diameter_bound — bbg/specs/statistics)
-  feeding the cost model and recursion bounds.
-- CybergraphSource: derived/normalized relations, tru-fresh focus/karma, content.
-- privacy: `cyberlinks` neuron-scoping (own plaintext ∪ keyed-in) via the owner
-  store; session context carries caller identity + keys (relations.md, the open
-  questions); reject writes to canonical relations.
-- the full `cost` model: read_cost + committed stats → static cycle ceiling.
+### R2b — full query-level proof  (GATED on the bbg proof door)
 
-verify: queries over a real bbg snapshot; privacy scope tests; cost = committed.
-depends on: bbg usability. estimate: ~3–5 sessions.
+**BLOCKER found 2026-06-08:** bbg's `look`/`open_dim` opens the dimension poly at the
+*key value* (not a hypercube corner), so the opened value is an MLE **fingerprint**,
+not the entity's column — and `ProofLookProvider` (fingerprint) disagrees with
+`BbgLookProvider` (real column). so NO column read is soundly provable yet, headline
+included. fix is a bbg-side protocol change, analyzed in **`bbg/roadmap/provable-reads.md`**
+(sound corner opening + position binding + provider consistency; then addressing).
+
+once the door is sound:
+- wire the nox trace from the relational lowering → `zheng::commit(trace, &[], &[],
+  look_openings, stmt, params)`; model on `cybergraph/tests/stack_look.rs`.
+- relation reads become look openings via bbg's `ProofLookProvider` /
+  `collect_look_openings` (already exist).
+- differential: proven result == inf-eval over BbgSource. verify in ~constant time
+  against the BBG root.
+
+## R3 — bbg / cybergraph sources + privacy  (LOCAL DONE; BBG PENDING)
+
+### R3a — committed GraphStats (local)  (DONE 2026-06-07)
+
+- `GraphStats { node_count, relation_sizes:[u64;11], max_degree, diameter_bound }`
+  in inf-source/src/lib.rs (mirrors bbg/specs/statistics.md exactly).
+- `rel_idx::*` constants for the canonical 11 relations.
+- `LocalSource::ensure_stats()`: computes stats from actual local data.
+- `LocalSource::with_stats(GraphStats)`: inject explicit committed stats.
+- `RelationSource::graph_stats() → Option<GraphStats>`: default returns None.
+- `cost` CLI uses committed stats: recursion defaults to diameter_bound, not 16.
+- 7 tests in inf-source.
+
+### R3b — BbgSource (DONE 2026-06-08) + CybergraphSource (PENDING)
+
+`BbgSource` reads real committed state. **DONE:**
+- `inf-source/src/bbg.rs` (feature `bbg`): `BbgSource<'a>{ state: &'a bbg::BbgState }`
+  impl `RelationSource`. all 11 canonical dimensions → full-column relations
+  (particles/neurons/locations/coins/cards/files/time/signals/balances as
+  entity records; axons_out/axons_in/`axons` flattened into edge tuples).
+  `graph_stats()` maps `state.statistics()` (field-identical to inf GraphStats).
+  `snapshot()` = `state.height`. **`provable()` = false** — the data is committed
+  but per-read proofs are not yet sound (see `bbg/roadmap/provable-reads.md`).
+- crate unification verified: bbg + inf resolve nox/zheng/nebu to the same paths.
+- 7 source tests + 3 inf-lower differential-parity tests: `eval` over BbgSource ==
+  `eval` over a LocalSource mirror (scan / filter / multi-column). +10 under
+  `--features bbg`; default suite unchanged (still 86), 0 warnings.
+
+**PENDING (R3b tail):**
+- CybergraphSource: derived/normalized relations over BbgSource.
+- privacy: `cyberlinks` neuron-scoping (own plaintext ∪ keyed-in); session
+  context carries caller identity + keys.
+- a SOUND LookProvider over BbgSource for R2b — blocked on the proof door
+  (`bbg/roadmap/provable-reads.md`), not on inf.
 
 ## R4 — reactive and live registers  (DONE 2026-06-07)
 
 - reactive: `:subscribe rel{..}` parsed; `eval_reactive(ir, source, events, ctx)`
-  applies each event and re-evaluates when it matches the subscription. the event
-  log is the witness sequence.
-- live: `Host.fn(args)` resolved by a `HostFn` provider on `Ctx` as a witness;
-  no provider → error. the pure builtins are untouched.
-- event-log/witness-conditional PROOFS arrive with R2 (zheng); the registers and
-  their execution semantics are in place and tested.
+  applies each event and re-evaluates when it matches the subscription.
+- live: `Host.fn(args)` resolved by a `HostFn` provider on `Ctx` as a witness.
+- `CondEval` hook added for nox condition routing (see R1a).
 
 ## R5 — builtin and algorithm tail  (DONE 2026-06-07)
 
-- functions: math (pow/signum/…), string (trim/chars/reverse/slice/…), list
-  (sorted/prepend/append/union/intersection/difference/…), vector (vec/ip_dist/
-  l2_dist — exact integer), regex (matches/replace/extract via `regex`), json
-  (is_json/json_get via `serde_json`). excluded by design: transcendentals,
-  random, `now`, cos_dist (fixed-point), time/validity (bbg).
-- algorithms: ClosenessCentrality, BetweennessCentrality (Brandes),
-  LabelPropagation, ClusteringCoefficients, CommunityDetectionLouvain (single-
-  level greedy), KShortestPathYen, ShortestPathAStar, MinimumSpanningForest
-  (Kruskal), RandomWalk (committed seed) — added to the earlier PageRank/degree/
-  components/SCC/BFS/DFS/Dijkstra/TopSort. fractional metrics fixed-point scaled.
+- functions: math, string, list, vector (exact integer), regex, json.
+- algorithms: PageRank, all centralities, components, community detection,
+  shortest paths (BFS/Dijkstra/AStar/Yen), MST, TopSort, RandomWalk.
 
 ## sequencing
 
 ```
-R0 (quick wins + oracle)  ──►  R1 (relational nox)  ──►  R2 (zheng)
-                               R3 (bbg sources) ───────────┘ (cost + proofs need it)
-R4 (reactive/live) and R5 (tail) run in parallel any time after R0.
+R0 (done)  ──►  R1a (done)  ──►  R1b (full trace)  ──►  R2b (full proof)
+                R3a (done)  ──►  R3b (BbgSource) ────────────────────────┘
+R2a (done) — expression-level proof works today, no bbg needed.
+R4, R5 (done)
 ```
 
-R0 first (cheap, hardens correctness). R1 is the critical path to a real proof
-language; R2 needs R1; R3 unblocks the committed cost model and real proofs.
-total to a proving, bbg-backed inf: roughly 15–25 sessions.
+total to a proving, bbg-backed inf: R1b + R2b + R3b ~= 11–18 sessions.

@@ -101,15 +101,23 @@ fn cmd_cost(src: &str) -> i32 {
         Ok(ir) => ir,
         Err(c) => return c,
     };
-    let g = demo::graph();
+    let mut g = demo::graph();
+    g.ensure_stats(); // compute committed stats from demo data
+
+    // Committed stats when available (specs/cost.md): node_count + relation_sizes
+    // from the BBG root give a static bound without scanning at query time.
+    let stats = g.graph_stats();
+    let node_count = stats.as_ref().map(|s| s.node_count).unwrap_or(64);
+    let diameter = stats.as_ref().map(|s| s.diameter_bound).unwrap_or(16);
+
     // A static estimate: Σ strata (rounds × Σ rules Σ read-atoms × relation size).
-    // rounds = the bound for a recursive stratum, else 1.
+    // rounds = explicit `:bounded N` for recursive strata, else diameter_bound.
     let size = |rel: &str| -> u64 {
         if let Some(_s) = g.schema(rel) {
             g.scan(rel).count() as u64
         } else {
-            // a derived relation: bound by the largest base relation
-            64
+            // derived relation: bound by the committed node_count
+            node_count
         }
     };
     let mut reads = 0u64;
@@ -117,7 +125,11 @@ fn cmd_cost(src: &str) -> i32 {
     let mut total = 0u64;
     let mut max_rounds = 1u64;
     for s in &ir.strata {
-        let rounds = if s.recursive { s.bound.unwrap_or(16) } else { 1 };
+        let rounds = if s.recursive {
+            s.bound.unwrap_or(diameter) // committed diameter if no explicit bound
+        } else {
+            1
+        };
         max_rounds = max_rounds.max(rounds);
         let (mut sr, mut sc) = (0u64, 0u64);
         for r in &s.rules {
@@ -143,6 +155,10 @@ fn cmd_cost(src: &str) -> i32 {
     println!("  reads:     {reads}  (Lens openings / scans — bbg side)");
     println!("  combine:   {combine}  (joins + algorithm cores — inf side)");
     println!("  recursion: up to ×{max_rounds} on recursive strata");
+    if let Some(s) = &stats {
+        println!("  committed: node_count={} diameter_bound={} max_degree={}",
+            s.node_count, s.diameter_bound, s.max_degree);
+    }
     0
 }
 
