@@ -7,11 +7,22 @@ license.workspace = true
 [lib]
 path = "src/lib.rs"
 
+[features]
+prove = ["dep:zheng", "nox/brakedown"]
+# R3b differential parity: eval over BbgSource == eval over LocalSource. Enables
+# inf-source's BbgSource and pulls bbg for building test state. Needs RUSTC_BOOTSTRAP=1.
+bbg = ["inf-source/bbg", "dep:bbg"]
+
 [dependencies]
-inf-ast = { path = "../ast" }
-inf-value = { path = "../value" }
-nox = { path = "../../../nox/rs" }
-nebu = { package = "cyb-nebu", path = "../../../strata/nebu/rs" }
+inf-ast    = { path = "../ast" }
+inf-value  = { path = "../value" }
+inf-source = { path = "../source" }
+inf-eval   = { path = "../eval" }
+nox        = { path = "../../../nox/rs" }
+nebu       = { package = "cyb-nebu", path = "../../../strata/nebu/rs" }
+zheng      = { path = "../../../zheng", optional = true }
+bbg        = { path = "../../../bbg/rs", optional = true }
 
 [dev-dependencies]
-inf-eval = { path = "../eval" }
+inf-parse = { path = "../parse" }
+inf-plan  = { path = "../plan" }
