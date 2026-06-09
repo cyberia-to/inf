@@ -8,16 +8,19 @@ differential oracle, full relational nox lowering (scan + equi-join +
 bounded-recursion trace via look pattern), committed GraphStats, `BbgSource` over
 real committed state (R3b), and zheng proof generation for expression/condition
 traces (R2a). DONE: R0, R1, R2a, R3a, R3b-BbgSource, R4, R5.
-remaining: R2b (full query proof — GATED on the bbg proof door, see
-`bbg/roadmap/provable-reads.md`), R3b tail (CybergraphSource + privacy scoping).
-compliance map: inf/rs/README.md. bbg-integration design: .claude/plans/bbg-integration.md.
+remaining: R2b (full query proof — inf wiring over bbg's existing look read; bbg/nox need
+no architectural change), R3b tail (CybergraphSource + privacy scoping).
+compliance map: inf/rs/README.md.
 
 ## R0 — quick wins and the oracle  (DONE 2026-06-07)
 
 - cozo differential-oracle: rs/oracle (excluded crate — path-deps gitignored
   cozo; built with `default-features=false, features=["rayon"]` to dodge the
   broken `graph` dep). 5 tests assert inf-eval == CozoDB on filter, join,
-  aggregation, transitive closure, negation.
+  aggregation, transitive closure, negation. KEEP cozo until stage 4 — it's the
+  only external semantics oracle and costs nothing (gitignored + workspace-
+  excluded); delete `rs/cozo` + `rs/oracle` once R2b/R3b land and the oracle
+  reruns green.
 - `pub input/output` decls: parsed into the AST (Decl/Type/Dir), Named/Array/
   Record types; `;` added to the lexer.
 - temp relations: `_`-prefixed derived relations work as intra-program temps
@@ -95,22 +98,18 @@ the real nox VM against a LocalLookProvider, differential-tested vs reference.
   prove_and_verify_tuple_condition (3 tests under `--features prove`).
 - gated: `inf-lower/Cargo.toml [features] prove = ["dep:zheng", "nox/brakedown"]`.
 
-### R2b — full query-level proof  (GATED on the bbg proof door)
+### R2b — full query-level proof  (inf wiring; bbg read primitive is sufficient)
 
-**BLOCKER found 2026-06-08:** bbg's `look`/`open_dim` opens the dimension poly at the
-*key value* (not a hypercube corner), so the opened value is an MLE **fingerprint**,
-not the entity's column — and `ProofLookProvider` (fingerprint) disagrees with
-`BbgLookProvider` (real column). so NO column read is soundly provable yet, headline
-included. fix is a bbg-side protocol change, analyzed in **`bbg/roadmap/provable-reads.md`**
-(sound corner opening + position binding + provider consistency; then addressing).
-
-once the door is sound:
-- wire the nox trace from the relational lowering → `zheng::commit(trace, &[], &[],
-  look_openings, stmt, params)`; model on `cybergraph/tests/stack_look.rs`.
-- relation reads become look openings via bbg's `ProofLookProvider` /
-  `collect_look_openings` (already exist).
-- differential: proven result == inf-eval over BbgSource. verify in ~constant time
-  against the BBG root.
+The bbg read primitive (index-addressed cell opening via `look`) is enough — no bbg/nox
+architectural change. (A bbg provider *bug* — an off-corner MLE fingerprint, entity-
+addressed — was fixed in bbg's `proof.rs`/`query.rs`; verification of that fix is parked
+behind the in-flight nox `NounId→Word` refactor.) R2b is inf implementation:
+- lower the query to nox `look` reads (index-addressed cells) + composition (key-binding
+  = read key cells + `eq`); run with bbg's `ProofLookProvider`.
+- `zheng::commit(trace, &[], &[], look_openings, stmt, params)` → `verify`; openings come
+  from `ProofLookProvider` / `collect_look_openings` (already exist). Model on
+  `cybergraph/tests/stack_look.rs`.
+- differential: proven result == inf-eval over BbgSource. verify in ~constant time.
 
 ## R3 — bbg / cybergraph sources + privacy  (LOCAL DONE; BBG PENDING)
 
@@ -133,8 +132,8 @@ once the door is sound:
   (particles/neurons/locations/coins/cards/files/time/signals/balances as
   entity records; axons_out/axons_in/`axons` flattened into edge tuples).
   `graph_stats()` maps `state.statistics()` (field-identical to inf GraphStats).
-  `snapshot()` = `state.height`. **`provable()` = false** — the data is committed
-  but per-read proofs are not yet sound (see `bbg/roadmap/provable-reads.md`).
+  `snapshot()` = `state.height`. **`provable()` = false** for now — flip to true once
+  R2b wires look openings (the bbg read primitive itself is sufficient).
 - crate unification verified: bbg + inf resolve nox/zheng/nebu to the same paths.
 - 7 source tests + 3 inf-lower differential-parity tests: `eval` over BbgSource ==
   `eval` over a LocalSource mirror (scan / filter / multi-column). +10 under
@@ -144,8 +143,8 @@ once the door is sound:
 - CybergraphSource: derived/normalized relations over BbgSource.
 - privacy: `cyberlinks` neuron-scoping (own plaintext ∪ keyed-in); session
   context carries caller identity + keys.
-- a SOUND LookProvider over BbgSource for R2b — blocked on the proof door
-  (`bbg/roadmap/provable-reads.md`), not on inf.
+- R2b look openings over BbgSource — inf wiring (bbg's `ProofLookProvider` already
+  serves the index-addressed read; no bbg/nox change needed).
 
 ## R4 — reactive and live registers  (DONE 2026-06-07)
 

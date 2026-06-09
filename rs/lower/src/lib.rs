@@ -37,7 +37,7 @@ use inf_ast::{Call, Term};
 use inf_source::{LocalSource, RelationSource};
 use inf_value::Value;
 use nebu::Goldilocks;
-use nox::{reduce, NounId, Order, Outcome, Tag};
+use nox::{reduce, Order, Reduction, Outcome};
 use std::collections::BTreeMap;
 
 const N: usize = 8192;
@@ -54,16 +54,16 @@ pub enum LowerError {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-fn quote(o: &mut Order<N>, v: u64) -> Result<NounId, LowerError> {
-    let one = o.atom(Goldilocks::new(1), Tag::Field).ok_or(LowerError::Arena)?;
-    let val = o.atom(Goldilocks::new(v), Tag::Field).ok_or(LowerError::Arena)?;
-    o.cell(one, val).ok_or(LowerError::Arena)
+fn quote(o: &mut Reduction<N>, v: u64) -> Result<Order, LowerError> {
+    let one = o.atom(Goldilocks::new(1)).ok_or(LowerError::Arena)?;
+    let val = o.atom(Goldilocks::new(v)).ok_or(LowerError::Arena)?;
+    o.pair(one, val).ok_or(LowerError::Arena)
 }
 
-fn binary(o: &mut Order<N>, op: u64, a: NounId, b: NounId) -> Result<NounId, LowerError> {
-    let body = o.cell(a, b).ok_or(LowerError::Arena)?;
-    let tag = o.atom(Goldilocks::new(op), Tag::Field).ok_or(LowerError::Arena)?;
-    o.cell(tag, body).ok_or(LowerError::Arena)
+fn binary(o: &mut Reduction<N>, op: u64, a: Order, b: Order) -> Result<Order, LowerError> {
+    let body = o.pair(a, b).ok_or(LowerError::Arena)?;
+    let tag = o.atom(Goldilocks::new(op)).ok_or(LowerError::Arena)?;
+    o.pair(tag, body).ok_or(LowerError::Arena)
 }
 
 fn require2(c: &Call) -> Result<(), LowerError> {
@@ -81,7 +81,7 @@ fn require1(c: &Call) -> Result<(), LowerError> {
 /// Lower an inf term to a nox formula that computes its numeric value.
 /// Variables resolve to columns of the subject tuple via axis navigation.
 /// Columns are right-nested: column i is at axis 2^(i+2) - 2.
-fn lower_term(o: &mut Order<N>, t: &Term, cols: &[String]) -> Result<NounId, LowerError> {
+fn lower_term(o: &mut Reduction<N>, t: &Term, cols: &[String]) -> Result<Order, LowerError> {
     match t {
         Term::Int(i) if *i >= 0 => quote(o, *i as u64),
         Term::Field(u) => quote(o, *u),
@@ -92,9 +92,9 @@ fn lower_term(o: &mut Order<N>, t: &Term, cols: &[String]) -> Result<NounId, Low
                 .position(|c| c == v)
                 .ok_or_else(|| LowerError::Unsupported(format!("variable `{v}`")))?;
             let axis = (1u64 << (idx + 2)) - 2;
-            let zero = o.atom(Goldilocks::new(0), Tag::Field).ok_or(LowerError::Arena)?;
-            let ax = o.atom(Goldilocks::new(axis), Tag::Field).ok_or(LowerError::Arena)?;
-            o.cell(zero, ax).ok_or(LowerError::Arena)
+            let zero = o.atom(Goldilocks::new(0)).ok_or(LowerError::Arena)?;
+            let ax = o.atom(Goldilocks::new(axis)).ok_or(LowerError::Arena)?;
+            o.pair(zero, ax).ok_or(LowerError::Arena)
         }
         Term::Call(c) if c.sibling.is_none() => lower_call(o, c, cols),
         other => Err(LowerError::Unsupported(format!("{other:?}"))),
@@ -102,7 +102,7 @@ fn lower_term(o: &mut Order<N>, t: &Term, cols: &[String]) -> Result<NounId, Low
 }
 
 /// Lower a condition call to a nox formula where 0 = condition satisfied.
-fn lower_call(o: &mut Order<N>, c: &Call, cols: &[String]) -> Result<NounId, LowerError> {
+fn lower_call(o: &mut Reduction<N>, c: &Call, cols: &[String]) -> Result<Order, LowerError> {
     match c.func.as_str() {
         // arithmetic (returns numeric, not 0/1)
         "add" => { require2(c)?; let a = lower_term(o, &c.args[0], cols)?; let b = lower_term(o, &c.args[1], cols)?; binary(o, 5, a, b) }
@@ -180,25 +180,25 @@ fn lower_call(o: &mut Order<N>, c: &Call, cols: &[String]) -> Result<NounId, Low
 
 /// Build a right-nested cons-list subject from integer column values.
 /// column 0 at axis 2, column 1 at axis 6 (= 2*3), column 2 at axis 14, etc.
-fn tuple_noun(o: &mut Order<N>, tuple: &[i64]) -> Result<NounId, LowerError> {
+fn tuple_data(o: &mut Reduction<N>, tuple: &[i64]) -> Result<Order, LowerError> {
     // right-nested: [v0 | [v1 | [v2 | NIL]]]
     // NIL = atom 0 (terminator)
-    let mut acc = o.atom(Goldilocks::new(0), Tag::Field).ok_or(LowerError::Arena)?;
+    let mut acc = o.atom(Goldilocks::new(0)).ok_or(LowerError::Arena)?;
     for &v in tuple.iter().rev() {
-        let val = o.atom(Goldilocks::new(v as u64), Tag::Field).ok_or(LowerError::Arena)?;
-        acc = o.cell(val, acc).ok_or(LowerError::Arena)?;
+        let val = o.atom(Goldilocks::new(v as u64)).ok_or(LowerError::Arena)?;
+        acc = o.pair(val, acc).ok_or(LowerError::Arena)?;
     }
     Ok(acc)
 }
 
 // ── execution helpers ─────────────────────────────────────────────────────────
 
-fn run(o: &mut Order<N>, subject: NounId, formula: NounId) -> Result<u64, LowerError> {
+fn run(o: &mut Reduction<N>, subject: Order, formula: Order) -> Result<u64, LowerError> {
     let calls = nox::NullCalls;
     let mut tracer = nox::NoTrace;
     match reduce(o, subject, formula, BUDGET, &calls, &mut tracer) {
         Outcome::Ok(id, _) => {
-            let (g, _) = o.atom_value(id).ok_or(LowerError::Runtime("non-atom result".into()))?;
+            let g = o.atom_value(id).ok_or(LowerError::Runtime("non-atom result".into()))?;
             Ok(g.as_u64())
         }
         Outcome::Halt(_) => Err(LowerError::Runtime("halted".into())),
@@ -210,17 +210,17 @@ fn run(o: &mut Order<N>, subject: NounId, formula: NounId) -> Result<u64, LowerE
 
 /// Lower a closed inf expression and run it on the nox VM.
 pub fn lower_and_run(t: &Term) -> Result<u64, LowerError> {
-    let mut o: Order<N> = Order::new();
+    let mut o: Reduction<N> = Reduction::new();
     let formula = lower_term(&mut o, t, &[])?;
-    let subject = o.atom(Goldilocks::new(0), Tag::Field).ok_or(LowerError::Arena)?;
+    let subject = o.atom(Goldilocks::new(0)).ok_or(LowerError::Arena)?;
     run(&mut o, subject, formula)
 }
 
 /// Lower an expression over tuple columns and run it on the nox VM.
 pub fn lower_and_run_tuple(t: &Term, cols: &[String], tuple: &[i64]) -> Result<u64, LowerError> {
-    let mut o: Order<N> = Order::new();
+    let mut o: Reduction<N> = Reduction::new();
     let formula = lower_term(&mut o, t, cols)?;
-    let subject = tuple_noun(&mut o, tuple)?;
+    let subject = tuple_data(&mut o, tuple)?;
     run(&mut o, subject, formula)
 }
 
@@ -274,9 +274,9 @@ pub fn eval_cond_via_nox(call: &Call, binding: &Binding) -> Option<bool> {
         }
     }
 
-    let mut o: Order<N> = Order::new();
+    let mut o: Reduction<N> = Reduction::new();
     let formula = lower_term(&mut o, &t, &var_names).ok()?;
-    let subject = tuple_noun(&mut o, &vals).ok()?;
+    let subject = tuple_data(&mut o, &vals).ok()?;
     match run(&mut o, subject, formula) {
         Ok(v) => Some(v == 0), // 0 = condition satisfied
         Err(_) => None,
@@ -308,9 +308,9 @@ pub fn make_nox_ctx() -> inf_eval::Ctx {
 #[cfg(feature = "prove")]
 pub fn prove_expr(t: &Term) -> Result<(u64, zheng::TraceProof), LowerError> {
     use nox::VecTrace;
-    let mut o: Order<N> = Order::new();
+    let mut o: Reduction<N> = Reduction::new();
     let formula = lower_term(&mut o, t, &[])?;
-    let subject = o.atom(Goldilocks::new(0), Tag::Field).ok_or(LowerError::Arena)?;
+    let subject = o.atom(Goldilocks::new(0)).ok_or(LowerError::Arena)?;
     let calls = nox::NullCalls;
     let mut tracer = VecTrace::default();
     let result_id = match reduce(&mut o, subject, formula, BUDGET, &calls, &mut tracer) {
@@ -318,7 +318,7 @@ pub fn prove_expr(t: &Term) -> Result<(u64, zheng::TraceProof), LowerError> {
         Outcome::Halt(_) => return Err(LowerError::Runtime("halted".into())),
         Outcome::Error(e) => return Err(LowerError::Runtime(format!("{e:?}"))),
     };
-    let (g, _) = o.atom_value(result_id).ok_or(LowerError::Runtime("non-atom result".into()))?;
+    let g = o.atom_value(result_id).ok_or(LowerError::Runtime("non-atom result".into()))?;
     let result = g.as_u64();
 
     // Prove the trace. Pure arithmetic traces have no hash, axis, or look rows —
@@ -360,9 +360,9 @@ pub fn prove_cond(
 ) -> Result<(bool, zheng::TraceProof), LowerError> {
     use nox::VecTrace;
     let t = Term::Call(Box::new(cond.clone()));
-    let mut o: Order<N> = Order::new();
+    let mut o: Reduction<N> = Reduction::new();
     let formula = lower_term(&mut o, &t, col_names)?;
-    let subject = tuple_noun(&mut o, tuple)?;
+    let subject = tuple_data(&mut o, tuple)?;
     let calls = nox::NullCalls;
     let mut tracer = VecTrace::default();
     let result_id = match reduce(&mut o, subject, formula, BUDGET, &calls, &mut tracer) {
@@ -370,7 +370,7 @@ pub fn prove_cond(
         Outcome::Halt(_) => return Err(LowerError::Runtime("halted".into())),
         Outcome::Error(e) => return Err(LowerError::Runtime(format!("{e:?}"))),
     };
-    let (g, _) = o.atom_value(result_id).ok_or(LowerError::Runtime("non-atom result".into()))?;
+    let g = o.atom_value(result_id).ok_or(LowerError::Runtime("non-atom result".into()))?;
     let holds = g.as_u64() == 0;
 
     let statement = zheng::Statement {
@@ -432,7 +432,7 @@ impl nox::LookProvider for LocalLookProvider {
 }
 
 impl<const NN: usize> nox::CallProvider<NN> for LocalLookProvider {
-    fn provide(&self, _o: &mut Order<NN>, _tag: Goldilocks, _obj: NounId) -> Option<NounId> {
+    fn provide(&self, _o: &mut Reduction<NN>, _tag: Goldilocks, _obj: Order) -> Option<Order> {
         None
     }
 }
@@ -441,44 +441,44 @@ impl<const NN: usize> nox::CallProvider<NN> for LocalLookProvider {
 
 /// Build the fake BBG subject: [[0|[0|[0|0]]] | 0]
 /// look pattern extracts limbs from axes [4,10,22,23].
-fn bbg_obj(o: &mut Order<N>) -> Result<NounId, LowerError> {
-    let l0 = o.atom(Goldilocks::ZERO, Tag::Field).ok_or(LowerError::Arena)?;
-    let l1 = o.atom(Goldilocks::ZERO, Tag::Field).ok_or(LowerError::Arena)?;
-    let l2 = o.atom(Goldilocks::ZERO, Tag::Field).ok_or(LowerError::Arena)?;
-    let l3 = o.atom(Goldilocks::ZERO, Tag::Field).ok_or(LowerError::Arena)?;
-    let inner = o.cell(l2, l3).ok_or(LowerError::Arena)?;
-    let mid   = o.cell(l1, inner).ok_or(LowerError::Arena)?;
-    let root  = o.cell(l0, mid).ok_or(LowerError::Arena)?;
-    let rest  = o.atom(Goldilocks::ZERO, Tag::Field).ok_or(LowerError::Arena)?;
-    o.cell(root, rest).ok_or(LowerError::Arena)
+fn bbg_obj(o: &mut Reduction<N>) -> Result<Order, LowerError> {
+    let l0 = o.atom(Goldilocks::ZERO).ok_or(LowerError::Arena)?;
+    let l1 = o.atom(Goldilocks::ZERO).ok_or(LowerError::Arena)?;
+    let l2 = o.atom(Goldilocks::ZERO).ok_or(LowerError::Arena)?;
+    let l3 = o.atom(Goldilocks::ZERO).ok_or(LowerError::Arena)?;
+    let inner = o.pair(l2, l3).ok_or(LowerError::Arena)?;
+    let mid   = o.pair(l1, inner).ok_or(LowerError::Arena)?;
+    let root  = o.pair(l0, mid).ok_or(LowerError::Arena)?;
+    let rest  = o.atom(Goldilocks::ZERO).ok_or(LowerError::Arena)?;
+    o.pair(root, rest).ok_or(LowerError::Arena)
 }
 
 /// [17 [[1 ns] [1 key]]] — look formula
-fn lf(o: &mut Order<N>, ns: u64, key: u64) -> Result<NounId, LowerError> {
-    let op  = o.atom(Goldilocks::new(17), Tag::Field).ok_or(LowerError::Arena)?;
+fn lf(o: &mut Reduction<N>, ns: u64, key: u64) -> Result<Order, LowerError> {
+    let op  = o.atom(Goldilocks::new(17)).ok_or(LowerError::Arena)?;
     let nsf = quote(o, ns)?;
     let kf  = quote(o, key)?;
-    let bdy = o.cell(nsf, kf).ok_or(LowerError::Arena)?;
-    o.cell(op, bdy).ok_or(LowerError::Arena)
+    let bdy = o.pair(nsf, kf).ok_or(LowerError::Arena)?;
+    o.pair(op, bdy).ok_or(LowerError::Arena)
 }
 
 /// [3 [a b]] — cons formula (construct a cell from two sub-formula results)
-fn cf(o: &mut Order<N>, a: NounId, b: NounId) -> Result<NounId, LowerError> {
-    let op  = o.atom(Goldilocks::new(3), Tag::Field).ok_or(LowerError::Arena)?;
-    let bdy = o.cell(a, b).ok_or(LowerError::Arena)?;
-    o.cell(op, bdy).ok_or(LowerError::Arena)
+fn cf(o: &mut Reduction<N>, a: Order, b: Order) -> Result<Order, LowerError> {
+    let op  = o.atom(Goldilocks::new(3)).ok_or(LowerError::Arena)?;
+    let bdy = o.pair(a, b).ok_or(LowerError::Arena)?;
+    o.pair(op, bdy).ok_or(LowerError::Arena)
 }
 
 /// [4 [cond [yes no]]] — branch: takes yes-arm when cond == 0
-fn brf(o: &mut Order<N>, cond: NounId, yes: NounId, no: NounId) -> Result<NounId, LowerError> {
-    let op   = o.atom(Goldilocks::new(4), Tag::Field).ok_or(LowerError::Arena)?;
-    let arms = o.cell(yes, no).ok_or(LowerError::Arena)?;
-    let bdy  = o.cell(cond, arms).ok_or(LowerError::Arena)?;
-    o.cell(op, bdy).ok_or(LowerError::Arena)
+fn brf(o: &mut Reduction<N>, cond: Order, yes: Order, no: Order) -> Result<Order, LowerError> {
+    let op   = o.atom(Goldilocks::new(4)).ok_or(LowerError::Arena)?;
+    let arms = o.pair(yes, no).ok_or(LowerError::Arena)?;
+    let bdy  = o.pair(cond, arms).ok_or(LowerError::Arena)?;
+    o.pair(op, bdy).ok_or(LowerError::Arena)
 }
 
 /// Build output tuple formula: [3 [look_col0 [3 [look_col1 ... [1 0]]]]]
-fn tuple_f(o: &mut Order<N>, ns: u64, row: usize, cols: &[usize]) -> Result<NounId, LowerError> {
+fn tuple_f(o: &mut Reduction<N>, ns: u64, row: usize, cols: &[usize]) -> Result<Order, LowerError> {
     let mut acc = quote(o, 0)?;  // NIL terminator
     for &col in cols.iter().rev() {
         let lk = lf(o, ns, row as u64 * MAX_ARITY + col as u64)?;
@@ -488,10 +488,10 @@ fn tuple_f(o: &mut Order<N>, ns: u64, row: usize, cols: &[usize]) -> Result<Noun
 }
 
 /// Decode a nox cons-list of tuples: [[c0|[c1|0]] | [[c0|...] | 0]] → Vec<Vec<u64>>
-fn decode_results(o: &Order<N>, id: NounId) -> Vec<Vec<u64>> {
+fn decode_results(o: &Reduction<N>, id: Order) -> Vec<Vec<u64>> {
     let mut rows = Vec::new();
     let mut cur = id;
-    while o.is_cell(cur) {
+    while o.is_pair(cur) {
         let head = o.head(cur).unwrap();
         cur = o.tail(cur).unwrap();
         rows.push(decode_tuple(o, head));
@@ -499,13 +499,13 @@ fn decode_results(o: &Order<N>, id: NounId) -> Vec<Vec<u64>> {
     rows
 }
 
-fn decode_tuple(o: &Order<N>, id: NounId) -> Vec<u64> {
+fn decode_tuple(o: &Reduction<N>, id: Order) -> Vec<u64> {
     let mut cols = Vec::new();
     let mut cur = id;
-    while o.is_cell(cur) {
+    while o.is_pair(cur) {
         let head = o.head(cur).unwrap();
         cur = o.tail(cur).unwrap();
-        if let Some((g, _)) = o.atom_value(head) {
+        if let Some(g) = o.atom_value(head) {
             cols.push(g.as_u64());
         }
     }
@@ -513,7 +513,7 @@ fn decode_tuple(o: &Order<N>, id: NounId) -> Vec<u64> {
 }
 
 /// Run a relational formula against the fake BBG object with a LocalLookProvider.
-fn run_rel(o: &mut Order<N>, formula: NounId, prov: &LocalLookProvider) -> Result<NounId, LowerError> {
+fn run_rel(o: &mut Reduction<N>, formula: Order, prov: &LocalLookProvider) -> Result<Order, LowerError> {
     let subj = bbg_obj(o)?;
     let mut tracer = nox::NoTrace;
     match reduce(o, subj, formula, BUDGET, prov, &mut tracer) {
@@ -531,7 +531,7 @@ fn run_rel(o: &mut Order<N>, formula: NounId, prov: &LocalLookProvider) -> Resul
 pub fn nox_vm_scan(src: &LocalSource, rel: &str, out_cols: &[usize]) -> Result<Vec<Vec<u64>>, LowerError> {
     let prov = LocalLookProvider::new(src, &[rel]);
     let n_rows = src.scan(rel).count();
-    let mut o: Order<N> = Order::new();
+    let mut o: Reduction<N> = Reduction::new();
 
     // Build cons-list formula from the last row upward
     let mut acc = quote(&mut o, 0)?;  // NIL base
@@ -557,7 +557,7 @@ pub fn nox_vm_scan_gt(
 ) -> Result<Vec<Vec<u64>>, LowerError> {
     let prov = LocalLookProvider::new(src, &[rel]);
     let n_rows = src.scan(rel).count();
-    let mut o: Order<N> = Order::new();
+    let mut o: Reduction<N> = Reduction::new();
 
     let mut acc = quote(&mut o, 0)?;
     for row in (0..n_rows).rev() {
@@ -590,7 +590,7 @@ pub fn nox_vm_equijoin(
     let prov  = LocalLookProvider::new(src, &[rel1, rel2]);
     let n1 = src.scan(rel1).count();
     let n2 = src.scan(rel2).count();
-    let mut o: Order<N> = Order::new();
+    let mut o: Reduction<N> = Reduction::new();
     let (ns1, ns2) = (0u64, 1u64);
 
     let mut acc = quote(&mut o, 0)?;  // NIL
@@ -637,13 +637,13 @@ pub fn nox_vm_equijoin(
 // frontier member (rebuilt each iteration). Rust manages the bounded loop.
 
 /// Decode a flat cons-list of atoms: [v0 | [v1 | ... | NIL]] → Vec<u64>
-fn decode_atom_list(o: &Order<N>, id: NounId) -> Vec<u64> {
+fn decode_atom_list(o: &Reduction<N>, id: Order) -> Vec<u64> {
     let mut vals = Vec::new();
     let mut cur = id;
-    while o.is_cell(cur) {
+    while o.is_pair(cur) {
         let head = o.head(cur).unwrap();
         cur = o.tail(cur).unwrap();
-        if let Some((g, _)) = o.atom_value(head) {
+        if let Some(g) = o.atom_value(head) {
             vals.push(g.as_u64());
         }
     }
@@ -680,7 +680,7 @@ pub fn nox_vm_bounded_reach(
     // Builds a nox formula: for each edge (from, to), if from ∈ frontier → include to.
     // or(eq(from, f0), eq(from, f1), ...) = mul of all eq formulas; 0 iff any match.
     let one_step = |frontier: &[u64]| -> Result<Vec<u64>, LowerError> {
-        let mut o: Order<N> = Order::new();
+        let mut o: Reduction<N> = Reduction::new();
         let mut acc = quote(&mut o, 0)?;
         for r in (0..n_edges).rev() {
             let lk_from = lf(&mut o, 0, r as u64 * MAX_ARITY + from_col as u64)?;

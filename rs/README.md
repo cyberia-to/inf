@@ -93,10 +93,10 @@ cargo run -p inf-cli -- cost query.inf    # now includes committed GraphStats ou
 
 - **R3b tail**: `CybergraphSource` (derived/normalized views) + cyberlink privacy
   scoping (neuron-keyed). `BbgSource` (committed reads) is done.
-- **bbg proof door** (`bbg/roadmap/provable-reads.md`): the `look` primitive opens an
-  MLE fingerprint, not the record cell — sound column reads (corner opening + position
-  binding) are a prerequisite for R2b. bbg-side protocol work, security-reviewed.
-- **R2b**: once the proof door is sound, prove whole-query results with look openings
-  against the BBG root. inf-side plumbing models on `cybergraph/tests/stack_look.rs`.
+- **R2b**: prove whole-query results with look openings against the BBG root. The bbg
+  read primitive is sufficient (index-addressed cell opening via `look`); R2b is inf
+  wiring — lower the query to `look` reads + composition, run with bbg's
+  `ProofLookProvider`, `zheng::commit` / `verify`. Models on
+  `cybergraph/tests/stack_look.rs`.
 
 see `.claude/plans/remaining.md`.
