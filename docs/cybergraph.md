@@ -1,5 +1,7 @@
 ---
-tags: cyber
+title: cybergraph datalog schema
+alias: cybergraph schema, datalog cybergraph, inf cybergraph
+tags: cyber, inf
 crystal-type: entity
 crystal-domain: cyber
 ---
