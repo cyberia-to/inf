@@ -20,7 +20,7 @@ inf-source = { path = "../source" }
 inf-eval   = { path = "../eval" }
 nox        = { path = "../../../nox/rs" }
 nebu       = { package = "cyb-nebu", path = "../../../strata/nebu/rs" }
-zheng      = { path = "../../../zheng", optional = true }
+zheng      = { path = "../../../zheng/rs", optional = true }
 bbg        = { path = "../../../bbg/rs", optional = true }
 
 [dev-dependencies]
