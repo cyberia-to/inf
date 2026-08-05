@@ -1,10 +1,32 @@
 # query optimization — indexing, reordering, ordered aggregate, semi-naive
 
-status: 2026-08-05, starting. root-caused against a real lytics workload
-(`passage_ids` — an inequality self-join computing a running count over
-1600 events measured at ~485ms). the cause generalizes to any inf caller,
-including cybergraph queries over `BbgSource`, so the fix belongs in inf,
-not in the caller.
+status: 2026-08-05, DONE — P0, P1, P2, P3 all landed, full suite green (98
+tests + 10 under `--features bbg` + 5 cozo oracle). root-caused against a
+real lytics workload (`passage_ids` — an inequality self-join computing a
+running count over 1600 events measured at ~485ms). the cause generalizes
+to any inf caller, including cybergraph queries over `BbgSource`, so the
+fix belongs in inf, not in the caller.
+
+results:
+- P0 (hash-indexed joins, `rs/eval/src/lib.rs`): the mtc-shaped scale test
+  (2000 events, larger than the reported bottleneck) — 25ms release / 232ms
+  debug, plus dropping the redundant second confirmation round every
+  non-recursive stratum was paying.
+- P1 (planner reordering, `rs/plan/src/lib.rs`): filter pushdown + most-
+  bound-first join scheduling, zero coupling risk to nox lowering (verified
+  `inf-lower`'s functions take explicit params, never consume `plan()`'s IR
+  generically).
+- P2 (bounded ordered aggregate, spec + `rs/eval/src/agg.rs` +
+  grammar/parser/plan): `running_*` + `:order` — the language-level fix
+  replacing the O(n²) self-join idiom with an O(n) primitive that composes
+  into proof.md's existing sort + running-accumulator constraint forms
+  (O(n) trace instead of O(n²)).
+- P3 (semi-naive recursion, `rs/eval/src/lib.rs`): closes a real gap
+  between what language.md/ir.md already specified ("semi-naive") and what
+  `eval` actually ran (naive full re-derivation every round). 300-hop chain:
+  123ms, vs. O(depth²) a naive re-derivation would pay.
+
+each landed as its own commit (`git log --oneline` in this repo).
 
 ## diagnosis (verified directly against source, not assumed)
 

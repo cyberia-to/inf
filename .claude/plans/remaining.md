@@ -1,13 +1,26 @@
 # inf — remaining work
 
-status: 2026-06-08. the LANGUAGE is feature-complete and verified in inf/rs
-(86 tests default + 10 under `--features bbg`, 0 warnings): parse → plan → eval
-with recursion, aggregation, negation, mutation derivation, the full function
-library, every graph algorithm, reactive + live registers, a CLI, a cozo
-differential oracle, full relational nox lowering (scan + equi-join +
-bounded-recursion trace via look pattern), committed GraphStats, `BbgSource` over
-real committed state (R3b), and zheng proof generation for expression/condition
-traces (R2a). DONE: R0, R1, R2a, R3a, R3b-BbgSource, R4, R5.
+status: 2026-08-05. the LANGUAGE is feature-complete and verified in inf/rs
+(98 tests default + 10 under `--features bbg`, 0 warnings): parse → plan → eval
+with recursion, aggregation, bounded ordered aggregate, negation, mutation
+derivation, the full function library, every graph algorithm, reactive + live
+registers, a CLI, a cozo differential oracle, full relational nox lowering
+(scan + equi-join + bounded-recursion trace via look pattern), committed
+GraphStats, `BbgSource` over real committed state (R3b), and zheng proof
+generation for expression/condition traces (R2a). DONE: R0, R1, R2a, R3a,
+R3b-BbgSource, R4, R5.
+
+also DONE (2026-08-05): query optimization P0-P3 —
+`.claude/plans/query-optimization.md`. root-caused against a real lytics
+workload (an inequality self-join computing a running count, ~485ms at 1600
+events, generalizes to any inf caller including cybergraph queries over
+`BbgSource`): hash-indexed joins (P0), planner-level join/filter reordering
+(P1), a bounded ordered aggregate language primitive replacing the O(n²)
+running-count self-join idiom with an O(n) one (P2), and genuinely semi-naive
+recursive evaluation instead of the naive full-relation re-derivation the
+implementation had been running despite language.md/ir.md already specifying
+semi-naive (P3).
+
 remaining: R2b (full query proof — inf wiring over bbg's existing look read; bbg/nox need
 no architectural change), R3b tail (CybergraphSource + privacy scoping).
 compliance map: inf/rs/README.md.

@@ -5,6 +5,15 @@ the Rust implementation of [[inf]], written from scratch per
 lowering reaches stage 3 for the expression layer. cozo/ is the gitignored
 study/oracle fork (excluded from this workspace).
 
+the reference evaluator is genuinely semi-naive now, indexed, and reorders
+joins — closing a real gap between what language.md/ir.md already specified
+and what `eval` actually did (`.claude/plans/query-optimization.md`, root-
+caused against a real lytics workload). also added: a bounded ordered
+aggregate (`running_*` + `:order`), the language-level fix for the class of
+query that idiom regressed on — a running count with no window primitive
+gets re-expressed as an O(n²) inequality self-join; the new primitive is
+O(n) to run and to prove.
+
 ## crates
 
 | crate | dir | what |
@@ -30,7 +39,7 @@ cd oracle && RUSTC_BOOTSTRAP=1 cargo test  # differential oracle vs CozoDB (need
 
 inf-lower depends on the `nox` crate (→ nebu, hemera), which needs
 `RUSTC_BOOTSTRAP=1`. The core engine has no external cyber dependencies and
-builds/tests on its own. 86 tests pass in the default suite; zero warnings.
+builds/tests on its own. 98 tests pass in the default suite; zero warnings.
 A further 10 tests run under `--features bbg` (R3b `BbgSource`):
 
 ```
@@ -49,23 +58,47 @@ cargo run -p inf-cli -- cost query.inf    # now includes committed GraphStats ou
 
 | spec | status | notes |
 |---|---|---|
-| language.md | complete (pure register) | value model (no float), rules, entry, aggregation, bounded recursion, mutation derivation, `pub input/output` decls, `_`-prefixed temp relations. reactive/live = extensions (done). |
-| grammar.md | complete | rules, conditions, binds, negation, mutation (`:link`/`:unlink`/`:put`/`:rm`), options, fixed rules (`<~`), addresses, infix arithmetic. |
+| language.md | complete (pure register) | value model (no float), rules, entry, aggregation, bounded ordered aggregate (`running_*` + `:order`), bounded recursion (genuinely semi-naive, not naive-refiring — see query-optimization.md P3), mutation derivation, `pub input/output` decls, `_`-prefixed temp relations. reactive/live = extensions (done). |
+| grammar.md | complete | rules, conditions, binds, negation, mutation (`:link`/`:unlink`/`:put`/`:rm`), options, fixed rules (`<~`), addresses, infix arithmetic, `:order` + `running_*` head aggregates. |
 | relations.md | R3a + R3b BbgSource | LocalSource + GraphStats (R3a); `BbgSource` over real committed `BbgState` reads all canonical dimensions as full-column relations + committed `GraphStats` (R3b, `--features bbg`). CybergraphSource + cyberlink privacy scoping still pending. |
 | functions.md | complete | math (add/sub/mul/div/mod/neg/abs/pow/signum/min/max); comparison + logical + `in`; string (length, concat, case, trim, chars, reverse, slice, starts/ends/includes); list (first, last, get, slice, sorted, reverse, prepend, append, union/intersection/difference); vector (vec, ip_dist, l2_dist — exact integer); regex (matches/replace/extract); json (is_json, json_get); coalesce, to_int, to_string; aggregations count/sum/min/max/mean/collect/unique/union. excluded by design: transcendentals, random, `now` (clock), cos_dist/normalize (need fixed-point) and time/validity (bbg time dimension). |
 | algorithms.md | complete | PageRank, DegreeCentrality, ClosenessCentrality, BetweennessCentrality (Brandes), ConnectedComponents, StronglyConnectedComponent, LabelPropagation, ClusteringCoefficients, CommunityDetectionLouvain (single-level greedy), BFS, DFS, ShortestPathBFS, ShortestPathDijkstra, ShortestPathAStar, KShortestPathYen, MinimumSpanningForestKruskal, TopSort, RandomWalk (committed seed). fractional metrics are fixed-point scaled (×10⁶, no float); `theta` is an integer percent. |
 | cost.md | mostly complete | `inf cost` reports a static estimate with reads/combine/recursion breakdown; uses committed `GraphStats` (node_count, diameter_bound, max_degree) when computed; recursion bound defaults to `diameter_bound`. |
 | ir.md | R1 complete | IR (strata) implemented; nox lowering covers arithmetic, comparisons, boolean connectives, column access, full relational scans + equi-joins + bounded-recursion trace via look (17) pattern (`nox_vm_scan`, `nox_vm_scan_gt`, `nox_vm_equijoin`, `nox_vm_bounded_reach`). LocalLookProvider serves LocalSource data; all differential-tested against reference eval. |
-| proof.md | R2 initial | `prove_expr` / `prove_cond` / `verify_expr_proof` via `--features prove`; pure arithmetic + comparison traces proved and verified with zheng (SuperSpartan + Brakedown, empty hash/look openings). Full query-level proof (with look openings against BBG root) pending R3 bbg integration. |
+| proof.md | R2 initial | `prove_expr` / `prove_cond` / `verify_expr_proof` via `--features prove`; pure arithmetic + comparison traces proved and verified with zheng (SuperSpartan + Brakedown, empty hash/look openings). operator table now has the ordered-aggregate row (sort + running accumulator composed — no new constraint form). Full query-level proof (with look openings against BBG root) pending R3 bbg integration. |
 | extensions.md | complete | reactive (`:subscribe` + `eval_reactive` event driver) and live (`Host.fn(..)` witness via a host provider). |
 | bootstrap.md | stage 2+3 | parse→IR→eval is the working reference engine; stage 3 = condition lowering on real nox (R1 done); staged proof path (R2 done for expressions). cozo differential oracle wired (rs/oracle). |
 
 ## verification
 
-- 86 unit + integration tests across the workspace (8 source, 20 eval, 22 lower, 9 cli, …).
+- 98 unit + integration tests across the workspace (8 source, 24 eval, 22
+  lower, 11 parse, 12 plan, 9 cli, …).
 - `eval` corpus covers: join/filter/sort/limit, bounded reachability, full
   closure, aggregation, negation, `:assert`, mutation batch, infix arithmetic,
   and all fixed-rule algorithms.
+- query-optimization.md (P0-P3), root-caused against a real lytics workload
+  (an inequality self-join computing a running count, ~485ms at 1600 events):
+  - P0 — `read_join`/`unify` build a hash index on a relation read's
+    already-bound columns instead of a full linear scan; the same scale
+    query is 25ms (release) / 232ms (debug) at 2000 events.
+  - P1 — `plan()` reorders each rule body: filter (`Cond`/`Not`/`Bind`)
+    pushdown to the earliest bound point, most-bound-first among
+    interchangeable relation reads. two tests lock a real reordering and a
+    pinned-filter case.
+  - P2 — bounded ordered aggregate (`running_*` + `:order`): partitions,
+    sorts, and runs an accumulator through every row instead of collapsing
+    to one row per group — the language-level fix for the running-count
+    idiom that made P0/P1 necessary in the first place.
+  - P3 — `eval_stratum`'s recursive branch is genuinely semi-naive: round 0
+    computes the base case, every later round substitutes only the previous
+    round's delta into one in-stratum atom occurrence at a time (union over
+    every occurrence), never re-deriving the full accumulated relation.
+    verified against a hand-checked multi-occurrence transitive-closure case
+    (two occurrences of the same recursive relation in one rule body) and a
+    300-hop chain scale test (123ms, vs. the O(depth²) a naive re-derivation
+    would pay).
+  - non-recursive strata also dropped their redundant confirmation round
+    (every rule body was evaluated twice before this fix).
 - `inf-lower` R1a: nox-VM result == reference engine result for arithmetic
   expressions, column expressions, and whole-query condition evaluation (gt/lt/
   eq/ne/ge/le/and/or/not) — differential-tested on scan, join, bounded recursion.
