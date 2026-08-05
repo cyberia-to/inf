@@ -268,7 +268,7 @@ fn eval_stratum_round(
     src: &dyn RelationSource,
     ctx: &Ctx,
 ) -> Result<(), EvalError> {
-    let mut binds_by_head: BTreeMap<String, (Head, Vec<Binding>)> = BTreeMap::new();
+    let mut binds_by_head: BTreeMap<String, (Head, Option<String>, Vec<Binding>)> = BTreeMap::new();
     for r in &stratum.rules {
         if let Some(f) = &r.fixed {
             let edges = rows_of(&f.edges, env, src)?.1;
@@ -277,12 +277,21 @@ fn eval_stratum_round(
             env.get_mut(&head_rel(r)).unwrap().1 = new;
         } else {
             let bs = eval_body(r, env, src, ctx)?;
-            let e = binds_by_head.entry(head_rel(r)).or_insert_with(|| (r.head.clone(), Vec::new()));
-            e.1.extend(bs);
+            let e = binds_by_head
+                .entry(head_rel(r))
+                .or_insert_with(|| (r.head.clone(), r.order.clone(), Vec::new()));
+            e.2.extend(bs);
         }
     }
-    for (rel, (head, binds)) in binds_by_head {
-        if head.has_aggr() {
+    for (rel, (head, order, binds)) in binds_by_head {
+        if let Some(order_var) = order {
+            // bounded ordered aggregate (P2): a `running_*` head aggregate,
+            // checked safe (paired with `:order`) by `plan()`. One output
+            // row per input row, not one per group — see `agg::windowed_aggregate`.
+            let tuples =
+                agg::windowed_aggregate(&head, &binds, &order_var).map_err(|m| EvalError { msg: m })?;
+            env.get_mut(&rel).unwrap().1 = tuples.into_iter().collect();
+        } else if head.has_aggr() {
             let tuples = agg::aggregate(&head, &binds).map_err(|m| EvalError { msg: m })?;
             env.get_mut(&rel).unwrap().1 = tuples.into_iter().collect();
         } else {

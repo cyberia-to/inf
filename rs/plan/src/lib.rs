@@ -380,6 +380,31 @@ fn check_safety(r: &Rule) -> Result<(), PlanError> {
             }
         }
     }
+    // ordered-aggregate safety (bounded ordered aggregate, P2): a `running_*`
+    // head aggregate and `:order` are mutual requirements — a running
+    // aggregate has no defined order to run over without one, and `:order`
+    // with no running aggregate sorts nothing observable.
+    let has_running = r
+        .head
+        .args
+        .iter()
+        .any(|a| matches!(a, HeadArg::Aggr { op, .. } if op.starts_with("running_")));
+    match (&r.order, has_running) {
+        (None, true) => {
+            return err("a `running_*` head aggregate requires `:order key`");
+        }
+        (Some(_), false) => {
+            return err("`:order` requires a `running_*` aggregate in the head");
+        }
+        (Some(key), true) => {
+            if !bound.contains(key) {
+                return err(format!(
+                    "unsafe rule: `:order` key `{key}` is not bound by a positive body atom"
+                ));
+            }
+        }
+        (None, false) => {}
+    }
     Ok(())
 }
 
@@ -468,6 +493,32 @@ mod tests {
     fn unsafe_head_var_rejected() {
         let r = plan(&parse("?[x, y] := axons{from: x, to: x}").unwrap());
         assert!(r.is_err(), "y is not bound");
+    }
+
+    #[test]
+    fn running_aggregate_without_order_is_rejected() {
+        let r = plan(&parse("?[neuron, running_count(ts)] := events{neuron, ts}").unwrap());
+        assert!(r.is_err(), "a running_* head aggregate needs :order");
+    }
+
+    #[test]
+    fn order_without_running_aggregate_is_rejected() {
+        let r = plan(&parse("?[neuron, ts] := events{neuron, ts} :order ts").unwrap());
+        assert!(r.is_err(), ":order with no running_* aggregate sorts nothing observable");
+    }
+
+    #[test]
+    fn order_key_must_be_bound() {
+        let r =
+            plan(&parse("?[neuron, running_count(neuron)] := events{neuron} :order ts").unwrap());
+        assert!(r.is_err(), "ts is not bound by any positive body atom");
+    }
+
+    #[test]
+    fn ordered_aggregate_accepted_and_plans() {
+        let p = ir("pid[neuron, ts, running_count(ts)] := events{neuron, ts} :order ts\n?[x] := pid[x, y, z]");
+        let pid = p.strata.iter().flat_map(|s| &s.rules).find(|r| r.head.name.as_deref() == Some("pid")).unwrap();
+        assert_eq!(pid.order.as_deref(), Some("ts"));
     }
 
     #[test]

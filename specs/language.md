@@ -129,6 +129,43 @@ keys.
 semi-lattice operators (`min`, `max`, `union`, `intersection`) are admissible
 inside recursive rules because they converge monotonically.
 
+### bounded ordered aggregate
+
+a plain aggregate collapses each group to one row — it cannot answer "how many
+so far, in order" without a sequence primitive. inf has none, by design (the
+value model has no window/lag construct), so that question would otherwise be
+re-expressed as an inequality self-join computing a running count — the same
+running-count trick a cohort/offset query already needs. that encoding proves
+correct, but its constraint count is quadratic in the input size: an O(n²)
+pairwise join where the direct question is O(n).
+
+`:order key` names a body variable to sort by; a `running_*` head operator
+accumulates over that order, one output row per input row rather than one per
+group:
+
+```
+pid[neuron, ts, running_count(ts)] := events{neuron, ts} :order ts
+```
+
+partitions by the head's other plain variables (`neuron`), sorts each
+partition by the order key (`ts`), and emits the running count through each
+row — `running_count` matches plain `count`'s existing meaning (rows present,
+not their value) windowed instead of collapsed. compose with a filter (a
+`Cond` atom, or an already-filtered relation) to count only the rows that
+matter — a running count of arrivals, say, rather than of every event.
+
+`:order key` and a `running_*` head operator are a mutual requirement: a
+`running_*` aggregate with no `:order` has no defined sequence to run over,
+and `:order` with no `running_*` operator sorts nothing observable — either
+alone is a plan-time error. the order key must be positively bound in the
+body, the same range-restriction rule as any head variable.
+
+lowering: a stable sort (permutation argument) followed by a single
+accumulator pass (running accumulator) — the exact two constraint forms
+[proof](proof.md)'s operator table already defines for `sort` and
+`aggregate`. the ordered aggregate's proof trace is linear in the partition
+size, not quadratic — this is why the primitive exists, not only convenience.
+
 ## mutation — bulk append
 
 the cybergraph is append-only (axiom A3): cyberlinks are never edited or deleted,

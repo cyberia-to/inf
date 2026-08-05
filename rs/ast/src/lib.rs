@@ -93,13 +93,18 @@ pub struct Fixed {
 }
 
 /// A rule. Either an inline rule (`head := body`) with an optional recursion
-/// bound, or a fixed rule (`head <~ Algo(..)`).
+/// bound and/or ordered-aggregate key, or a fixed rule (`head <~ Algo(..)`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rule {
     pub head: Head,
     pub body: Vec<Atom>,
     pub bound: Option<u64>,
     pub fixed: Option<Fixed>,
+    /// `:order key` — required by (and only meaningful with) a `running_*`
+    /// head aggregate (specs/language.md, bounded ordered aggregate). Names
+    /// the body variable each partition (the other plain head vars) sorts
+    /// by before the running aggregate accumulates.
+    pub order: Option<String>,
 }
 
 /// A canonical or temp-relation mutation.
@@ -214,12 +219,14 @@ mod tests {
                     body: vec![],
                     bound: None,
                     fixed: None,
+                    order: None,
                 },
                 Rule {
                     head: Head { name: None, args: vec![HeadArg::Var("x".into())] },
                     body: vec![Atom::Apply { rule: "r".into(), args: vec![Term::Var("x".into())] }],
                     bound: None,
                     fixed: None,
+                    order: None,
                 },
             ],
             decls: vec![],

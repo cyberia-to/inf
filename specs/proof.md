@@ -47,11 +47,17 @@ operators become constraints, following the mapping bbg defines
 | join | lookup argument (LogUp) |
 | sort | permutation argument |
 | aggregate (sum, max, count) | running accumulator |
+| ordered aggregate (`running_*`, `:order`) | sort (permutation argument) + running accumulator |
 | limit (top-k) | comparison chain + truncation |
 | recursion | bounded fold (one layer per round, ≤ the snapshot bound) |
 
 the proof covers both the openings and the computation: it shows every input row
-came from the committed graph and the operators were applied correctly.
+came from the committed graph and the operators were applied correctly. the
+ordered aggregate (see [language](language.md), bounded ordered aggregate) is
+exactly these two existing rows composed — no new constraint form. this is
+the point of the primitive: the same question re-expressed as an inequality
+self-join instead proves as a join per compared pair, quadratic in the
+partition size rather than linear.
 
 ## a multi-row result
 

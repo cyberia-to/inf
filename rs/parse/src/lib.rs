@@ -212,18 +212,28 @@ impl Parser {
         let head = self.head()?;
         if self.eat(&Tok::FixedArrow) {
             let fixed = self.fixed_call()?;
-            return Ok(Rule { head, body: vec![], bound: None, fixed: Some(fixed) });
+            return Ok(Rule { head, body: vec![], bound: None, fixed: Some(fixed), order: None });
         }
         self.expect(&Tok::Assign)?;
         let body = self.body()?;
         let mut bound = None;
-        // a trailing `:bounded N` attaches to this rule
-        if self.peek() == Some(&Tok::Colon) && self.peek2() == Some(&Tok::Ident("bounded".into())) {
-            self.bump();
-            self.bump();
-            bound = Some(self.uint()?);
+        let mut order = None;
+        // trailing `:bounded N` / `:order key` attach to this rule, in either
+        // order (a rule attr loop, not a fixed sequence).
+        loop {
+            if self.peek() == Some(&Tok::Colon) && self.peek2() == Some(&Tok::Ident("bounded".into())) {
+                self.bump();
+                self.bump();
+                bound = Some(self.uint()?);
+            } else if self.peek() == Some(&Tok::Colon) && self.peek2() == Some(&Tok::Ident("order".into())) {
+                self.bump();
+                self.bump();
+                order = Some(self.ident()?);
+            } else {
+                break;
+            }
         }
-        Ok(Rule { head, body, bound, fixed: None })
+        Ok(Rule { head, body, bound, fixed: None, order })
     }
 
     /// `Algo( edges[], key: term, posarg, .. )`
@@ -518,6 +528,27 @@ mod tests {
         let p = p.unwrap();
         assert_eq!(p.rules.len(), 3);
         assert_eq!(p.rules[2].bound, Some(5));
+    }
+
+    #[test]
+    fn ordered_aggregate_order_attr() {
+        let p = parse("pid[neuron, ts, running_count(ts)] := events{neuron, ts} :order ts\n?[x] := pid[x, y, z]")
+            .unwrap();
+        assert_eq!(p.rules[0].order.as_deref(), Some("ts"));
+        assert_eq!(p.rules[1].order, None);
+    }
+
+    #[test]
+    fn order_and_bounded_attrs_parse_in_either_order() {
+        // parser-level only — attrs may appear in either order after a rule's
+        // body; whether the combination is semantically sound is plan()'s job.
+        let a = parse("?[x, running_count(x)] := axons{from, to: x} :order x :bounded 3").unwrap();
+        assert_eq!(a.rules[0].order.as_deref(), Some("x"));
+        assert_eq!(a.rules[0].bound, Some(3));
+
+        let b = parse("?[x, running_count(x)] := axons{from, to: x} :bounded 3 :order x").unwrap();
+        assert_eq!(b.rules[0].order.as_deref(), Some("x"));
+        assert_eq!(b.rules[0].bound, Some(3));
     }
 
     #[test]

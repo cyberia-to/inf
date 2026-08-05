@@ -327,6 +327,61 @@ fn infix_arithmetic_in_bind() {
     assert_eq!(map.get(&p("d")), Some(&Value::int(2)));
 }
 
+/// bounded ordered aggregate (P2, `.claude/plans/query-optimization.md`):
+/// `running_count` matches plain `count`'s existing presence-based meaning
+/// (row count, not value-truthiness — `count(x)` never inspects `x`'s value
+/// either), just windowed per partition in `:order` order instead of
+/// collapsed to one row per group. Composes with a pre-filter (a `Cond` atom
+/// or an already-filtered relation, e.g. lytics' `arrival_ev`) to get a
+/// running count of only the rows that matter — the replacement for an
+/// inequality self-join's running-count idiom (root cause of the original
+/// ~485ms `passage_ids` measurement this whole plan starts from).
+#[test]
+fn ordered_aggregate_running_count_per_partition() {
+    let mut s = LocalSource::new();
+    s.add(
+        "events",
+        &["neuron", "ts"],
+        vec![
+            vec![Value::str("n1"), Value::int(10)],
+            vec![Value::str("n1"), Value::int(20)],
+            vec![Value::str("n1"), Value::int(30)],
+            vec![Value::str("n2"), Value::int(15)],
+            vec![Value::str("n2"), Value::int(25)],
+        ],
+    );
+    let script = "pid[neuron, ts, running_count(ts)] := events{neuron, ts} :order ts\n\
+        ?[neuron, ts, running_count] := pid[neuron, ts, running_count]";
+    let prog = parse(script).expect("parse");
+    let ir = plan(&prog).expect("plan");
+    let out = eval(&ir, &s, &Ctx::default()).expect("eval");
+
+    let neuron = col(&out, "neuron");
+    let ts = col(&out, "ts");
+    let rc = col(&out, "running_count");
+    let mut got: Vec<(String, i64, i64)> = out
+        .rows
+        .iter()
+        .map(|r| {
+            let n = if let Value::Bytes(b) = &r[neuron] { String::from_utf8_lossy(b).into_owned() } else { panic!() };
+            let t = if let Value::Int(i) = &r[ts] { *i } else { panic!() };
+            let c = if let Value::Int(i) = &r[rc] { *i } else { panic!() };
+            (n, t, c)
+        })
+        .collect();
+    got.sort();
+    assert_eq!(
+        got,
+        vec![
+            ("n1".into(), 10, 1),
+            ("n1".into(), 20, 2),
+            ("n1".into(), 30, 3),
+            ("n2".into(), 15, 1),
+            ("n2".into(), 25, 2),
+        ]
+    );
+}
+
 /// doubling transitive closure — `path[x,z] := path{x,y}, path{y,z}` has TWO
 /// occurrences of the same in-stratum relation in one rule body, the classic
 /// stress case for semi-naive's "one variant per occurrence" scheme

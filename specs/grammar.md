@@ -22,10 +22,12 @@ rule          = head ":=" body rule_attr* ;       (* [trident] fn_def + block *)
 entry_rule    = "?" "[" head_args "]" ":=" body rule_attr* ;
 head          = IDENT "[" head_args "]" ;
 head_args     = head_arg ("," head_arg)* ;
-head_arg      = IDENT | aggr "(" IDENT ")" ;
+head_arg      = IDENT | aggr "(" IDENT ")" | ordered_aggr "(" IDENT ")" ;
 aggr          = "count" | "sum" | "min" | "max" | "mean"
               | "union" | "intersection" | "collect" ;
-rule_attr     = ":bounded" INTEGER ;              (* explicit recursion bound *)
+ordered_aggr  = "running_count" ;                 (* requires ":order" — see below *)
+rule_attr     = ":bounded" INTEGER                (* explicit recursion bound *)
+              | ":order" IDENT ;                  (* bounded ordered aggregate key *)
 
 (* Body — conjunction of atoms *)
 body          = atom ("," atom)* ;                (* [trident] composition *)
@@ -78,6 +80,9 @@ comment       = "//" .* NEWLINE ;
   `for … bounded N`. a recursive rule without `:bounded` and without an
   inferable closed-form bound is rejected (see [language](language.md),
   bounded recursion).
+- `:order key` and a `running_*` head aggregate are a mutual requirement — a
+  rule with one and not the other is rejected at plan time (see
+  [language](language.md), bounded ordered aggregate).
 - `relation_read` lowers to the [[nox]] `look` pattern; each read carries a
   [[lens]] opening against the graph root (see proof).
 - `condition` and arithmetic `builtin`s lower to [[Trident|Tri]] (field) or
