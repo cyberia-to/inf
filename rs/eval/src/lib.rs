@@ -1,7 +1,11 @@
-//! The reference evaluator: a naive-fixed-point datalog engine over the IR and a
-//! `RelationSource` (specs/ir.md, specs/language.md). Each stratum is evaluated
-//! bottom-up; recursive strata iterate to a bounded fixed point. This is the
-//! canonical-semantics reference the nox lowering must match.
+//! The reference evaluator: a semi-naive datalog engine over the IR and a
+//! `RelationSource` (specs/ir.md, specs/language.md — language.md's bounded
+//! recursion section specifies semi-naive explicitly). Each stratum is
+//! evaluated bottom-up; a non-recursive stratum needs one pass, a recursive
+//! stratum iterates to a bounded fixed point by joining only newly-derived
+//! (delta) facts each round rather than re-deriving from the full
+//! accumulated relation (`.claude/plans/query-optimization.md` P3). This is
+//! the canonical-semantics reference the nox lowering must match.
 
 mod agg;
 mod expr;
@@ -14,7 +18,7 @@ pub use expr::Ctx;
 use inf_ast::*;
 use inf_source::RelationSource;
 use inf_value::{Relation, Tuple, Value};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use expr::{eval_call, eval_term, Binding};
 
@@ -142,64 +146,35 @@ fn eval_stratum(
         env.entry(head_rel(r)).or_insert_with(|| (head_cols(&r.head), Relation::new()));
     }
 
-    let mut rounds = 0usize;
+    // Round 0 (also the entire evaluation for a non-recursive stratum): every
+    // in-stratum relation starts empty, so any rule referencing one
+    // contributes nothing yet — this naturally computes just the base case
+    // (e.g. `reachable[x] := axons{..}`) without special-casing it.
+    eval_stratum_round(stratum, env, src, ctx)?;
+    if !stratum.recursive {
+        return Ok(());
+    }
+
+    // `in_stratum` — the relations this stratum itself defines. A rule body
+    // atom referencing one of these is a "recursive" occurrence; a rule with
+    // none is a base rule whose inputs (source relations, lower strata) never
+    // change across this stratum's rounds, so round 0 already computed its
+    // final contribution and it is never re-run (this also covers `Fixed`
+    // rules: their `edges` dependency is always forced to a strictly lower
+    // stratum by `derived_deps`, so a fixed rule can never itself be
+    // recursive within its own stratum).
+    let in_stratum: HashSet<String> = stratum.rules.iter().map(head_rel).collect();
+
+    // delta[rel] = every fact `total` (env) holds after round 0 — everything
+    // is "new" going into round 1, since total started empty.
+    let mut delta: BTreeMap<String, Relation> = in_stratum
+        .iter()
+        .map(|rel| (rel.clone(), env.get(rel).map(|(_, r)| r.clone()).unwrap_or_default()))
+        .collect();
+
+    let mut rounds = 1usize;
     loop {
-        let mut changed = false;
-        let mut binds_by_head: BTreeMap<String, (Head, Vec<Binding>)> = BTreeMap::new();
-        for r in &stratum.rules {
-            if let Some(f) = &r.fixed {
-                let edges = rows_of(&f.edges, env, src)?.1;
-                let tuples =
-                    fixed::run(f, &r.head, &edges, ctx).map_err(|m| EvalError { msg: m })?;
-                let new: Relation = tuples.into_iter().collect();
-                let slot = env.get_mut(&head_rel(r)).unwrap();
-                if slot.1 != new {
-                    slot.1 = new;
-                    changed = true;
-                }
-            } else {
-                let bs = eval_body(r, env, src, ctx)?;
-                let e = binds_by_head
-                    .entry(head_rel(r))
-                    .or_insert_with(|| (r.head.clone(), Vec::new()));
-                e.1.extend(bs);
-            }
-        }
-
-        for (rel, (head, binds)) in binds_by_head {
-            let cols = head_cols(&head);
-            if head.has_aggr() {
-                let tuples = agg::aggregate(&head, &binds).map_err(|m| EvalError { msg: m })?;
-                let new: Relation = tuples.into_iter().collect();
-                let slot = env.get_mut(&rel).unwrap();
-                if slot.1 != new {
-                    slot.1 = new;
-                    changed = true;
-                }
-            } else {
-                let slot = env.get_mut(&rel).unwrap();
-                let _ = cols;
-                for b in &binds {
-                    let t = project(&head, b)?;
-                    if slot.1.insert(t) {
-                        changed = true;
-                    }
-                }
-            }
-        }
-
-        rounds += 1;
-        // A non-recursive stratum's rules read only source relations and
-        // already-fully-computed lower strata (that's what "non-recursive"
-        // means after stratification) — one pass derives every fact there
-        // is to derive. A second round would just re-derive the same facts
-        // and find nothing changed, paying the full join cost again for no
-        // new information (see `.claude/plans/query-optimization.md`). Only
-        // a recursive stratum needs to iterate toward a fixed point.
-        if !stratum.recursive {
-            break;
-        }
-        if !changed {
+        if delta.values().all(|d| d.is_empty()) {
             break;
         }
         if let Some(b) = stratum.bound {
@@ -209,6 +184,113 @@ fn eval_stratum(
         }
         if rounds >= HARD_CAP {
             return err("evaluation exceeded the hard round cap (non-terminating?)");
+        }
+
+        // For each in-stratum atom occurrence in a recursive rule, run one
+        // semi-naive variant substituting that occurrence's relation with
+        // just this round's delta, leaving every other atom (including other
+        // occurrences of the same or a different in-stratum relation) on the
+        // normal total-as-of-start-of-round path. Union over every
+        // occurrence in every recursive rule — the standard semi-naive
+        // scheme (see the module doc and query-optimization.md P3): any
+        // derivation that needs a newly-added fact is found through the
+        // variant that substitutes the occurrence supplying it.
+        let mut binds_by_head: BTreeMap<String, (Head, Vec<Binding>)> = BTreeMap::new();
+        for r in &stratum.rules {
+            if r.fixed.is_some() {
+                continue; // base rule, see above
+            }
+            let recursive_positions: Vec<usize> = r
+                .body
+                .iter()
+                .enumerate()
+                .filter_map(|(i, a)| match a {
+                    Atom::Read { rel, .. } | Atom::Apply { rule: rel, .. }
+                        if in_stratum.contains(rel) =>
+                    {
+                        Some(i)
+                    }
+                    _ => None,
+                })
+                .collect();
+            if recursive_positions.is_empty() {
+                continue; // base rule, see above
+            }
+            for pos in recursive_positions {
+                let rel = r.body[pos].rel_name().unwrap().to_string();
+                let d = match delta.get(&rel) {
+                    Some(d) if !d.is_empty() => d,
+                    _ => continue,
+                };
+                let delta_cols = env.get(&rel).map(|(c, _)| c.clone()).unwrap_or_default();
+                let delta_rows: Vec<Tuple> = d.iter().cloned().collect();
+                let bs = eval_body_delta_variant(r, env, src, ctx, pos, &delta_cols, &delta_rows)?;
+                let e = binds_by_head
+                    .entry(head_rel(r))
+                    .or_insert_with(|| (r.head.clone(), Vec::new()));
+                e.1.extend(bs);
+            }
+        }
+
+        // Materialize this round's variants: only truly new facts (not
+        // already in `total`) become next round's delta. `env` is mutated
+        // only here, after every variant for this round has read the
+        // pre-round snapshot — preserving the semi-naive invariant that a
+        // round's "total" side never sees that same round's own deltas.
+        let mut delta_next: BTreeMap<String, Relation> = BTreeMap::new();
+        for (rel, (head, binds)) in binds_by_head {
+            let new_facts: Vec<Tuple> = if head.has_aggr() {
+                agg::aggregate(&head, &binds).map_err(|m| EvalError { msg: m })?
+            } else {
+                binds.iter().map(|b| project(&head, b)).collect::<Result<_, _>>()?
+            };
+            let slot = env.get_mut(&rel).unwrap();
+            let mut nd = Relation::new();
+            for t in new_facts {
+                if slot.1.insert(t.clone()) {
+                    nd.insert(t);
+                }
+            }
+            delta_next.insert(rel, nd);
+        }
+        delta = delta_next;
+        rounds += 1;
+    }
+    Ok(())
+}
+
+/// Evaluate every rule in `stratum` once against the environment's current
+/// state, materializing newly-derived facts into `env`. The complete
+/// evaluation for a non-recursive stratum; round 0 for a recursive one.
+fn eval_stratum_round(
+    stratum: &Stratum,
+    env: &mut Env,
+    src: &dyn RelationSource,
+    ctx: &Ctx,
+) -> Result<(), EvalError> {
+    let mut binds_by_head: BTreeMap<String, (Head, Vec<Binding>)> = BTreeMap::new();
+    for r in &stratum.rules {
+        if let Some(f) = &r.fixed {
+            let edges = rows_of(&f.edges, env, src)?.1;
+            let tuples = fixed::run(f, &r.head, &edges, ctx).map_err(|m| EvalError { msg: m })?;
+            let new: Relation = tuples.into_iter().collect();
+            env.get_mut(&head_rel(r)).unwrap().1 = new;
+        } else {
+            let bs = eval_body(r, env, src, ctx)?;
+            let e = binds_by_head.entry(head_rel(r)).or_insert_with(|| (r.head.clone(), Vec::new()));
+            e.1.extend(bs);
+        }
+    }
+    for (rel, (head, binds)) in binds_by_head {
+        if head.has_aggr() {
+            let tuples = agg::aggregate(&head, &binds).map_err(|m| EvalError { msg: m })?;
+            env.get_mut(&rel).unwrap().1 = tuples.into_iter().collect();
+        } else {
+            let slot = env.get_mut(&rel).unwrap();
+            for b in &binds {
+                let t = project(&head, b)?;
+                slot.1.insert(t);
+            }
         }
     }
     Ok(())
@@ -442,6 +524,31 @@ fn any_match<'r>(
     Ok(false)
 }
 
+/// The core of a relation join, over an explicit `(cols, rows)` pair rather
+/// than resolving through `env`/`src` — lets a caller substitute a different
+/// row set for the same relation (semi-naive's delta substitution, see
+/// `eval_body_delta_variant`) without duplicating the indexing logic.
+fn join_over(
+    cols: &[String],
+    rows: &[Tuple],
+    binds: &Binds,
+    bindings: &[Binding],
+    ctx: &Ctx,
+) -> Result<Vec<Binding>, EvalError> {
+    let mut out = Vec::new();
+    if bindings.is_empty() || rows.is_empty() {
+        return Ok(out);
+    }
+    let idx = BoundIndex::build(binds, cols, rows, &bindings[0]);
+    for b in bindings {
+        match &idx {
+            Some(i) => join_matches(i.candidates(b, ctx).iter().copied(), binds, cols, b, ctx, &mut out)?,
+            None => join_matches(rows.iter(), binds, cols, b, ctx, &mut out)?,
+        }
+    }
+    Ok(out)
+}
+
 fn read_join(
     rel: &str,
     binds: &Binds,
@@ -451,18 +558,39 @@ fn read_join(
     ctx: &Ctx,
 ) -> Result<Vec<Binding>, EvalError> {
     let (cols, rows) = rows_of(rel, env, src)?;
-    let mut out = Vec::new();
-    if bindings.is_empty() || rows.is_empty() {
-        return Ok(out);
-    }
-    let idx = BoundIndex::build(binds, &cols, &rows, &bindings[0]);
-    for b in &bindings {
-        match &idx {
-            Some(i) => join_matches(i.candidates(b, ctx).iter().copied(), binds, &cols, b, ctx, &mut out)?,
-            None => join_matches(rows.iter(), binds, &cols, b, ctx, &mut out)?,
+    join_over(&cols, &rows, binds, &bindings, ctx)
+}
+
+/// One semi-naive substitution variant of a recursive rule's body: the atom
+/// at `delta_pos` reads `delta_rows` instead of the accumulated total; every
+/// other atom reads normally via `env`/`src` (see `eval_stratum` and
+/// `.claude/plans/query-optimization.md` P3).
+fn eval_body_delta_variant(
+    r: &Rule,
+    env: &Env,
+    src: &dyn RelationSource,
+    ctx: &Ctx,
+    delta_pos: usize,
+    delta_cols: &[String],
+    delta_rows: &[Tuple],
+) -> Result<Vec<Binding>, EvalError> {
+    let mut bindings = vec![Binding::new()];
+    for (i, atom) in r.body.iter().enumerate() {
+        bindings = if i == delta_pos {
+            let binds = match atom {
+                Atom::Read { binds, .. } => binds.clone(),
+                Atom::Apply { args, .. } => Binds::Pos(args.clone()),
+                _ => return err("semi-naive delta substitution target must be a relation read"),
+            };
+            join_over(delta_cols, delta_rows, &binds, &bindings, ctx)?
+        } else {
+            step_atom(atom, bindings, env, src, ctx)?
+        };
+        if bindings.is_empty() {
+            break;
         }
     }
-    Ok(out)
+    Ok(bindings)
 }
 
 /// Try to unify a relation read's bindings against a row under `base`.

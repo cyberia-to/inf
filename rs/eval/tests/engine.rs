@@ -327,6 +327,91 @@ fn infix_arithmetic_in_bind() {
     assert_eq!(map.get(&p("d")), Some(&Value::int(2)));
 }
 
+/// doubling transitive closure — `path[x,z] := path{x,y}, path{y,z}` has TWO
+/// occurrences of the same in-stratum relation in one rule body, the classic
+/// stress case for semi-naive's "one variant per occurrence" scheme
+/// (`.claude/plans/query-optimization.md` P3). hand-verified fixed point for
+/// the chain a→b→c→d: {ab,bc,cd,ac,bd,ad} — all 6 forward-reachable pairs.
+#[test]
+fn semi_naive_handles_multiple_occurrences_of_the_same_recursive_relation() {
+    let mut s = LocalSource::new();
+    s.add(
+        "edge",
+        &["from", "to"],
+        vec![
+            vec![Value::str("a"), Value::str("b")],
+            vec![Value::str("b"), Value::str("c")],
+            vec![Value::str("c"), Value::str("d")],
+        ],
+    );
+    // `path`'s own columns are named after its head vars ("x", "z") — the
+    // recursive rule binds by those names, not `edge`'s ("from", "to").
+    let script = "path[x, z] := edge{from: x, to: z}\n\
+        path[x, z] := path{x, z: y}, path{x: y, z}\n\
+        ?[x, z] := path{x, z}";
+    let prog = parse(script).expect("parse");
+    let ir = plan(&prog).expect("plan");
+    let out = eval(&ir, &s, &Ctx::default()).expect("eval");
+
+    let x = col(&out, "x");
+    let z = col(&out, "z");
+    let mut pairs: Vec<(String, String)> = out
+        .rows
+        .iter()
+        .map(|r| {
+            let sx = if let Value::Bytes(b) = &r[x] { String::from_utf8_lossy(b).into_owned() } else { panic!() };
+            let sz = if let Value::Bytes(b) = &r[z] { String::from_utf8_lossy(b).into_owned() } else { panic!() };
+            (sx, sz)
+        })
+        .collect();
+    pairs.sort();
+    assert_eq!(
+        pairs,
+        vec![
+            ("a".into(), "b".into()),
+            ("a".into(), "c".into()),
+            ("a".into(), "d".into()),
+            ("b".into(), "c".into()),
+            ("b".into(), "d".into()),
+            ("c".into(), "d".into()),
+        ]
+    );
+}
+
+/// a naive fixed-point re-derives every rule over the FULL accumulated
+/// relation each round — for a chain graph, where each round's delta is one
+/// new hop, that is O(1+2+..+N) = O(N²) total join work. semi-naive joins
+/// only each round's new fact against the (P0-indexed) edge relation, O(N)
+/// total. a long chain makes the difference dramatic — this is a regression
+/// guard for P3, not a precise timing budget (`.claude/plans/query-optimization.md`).
+#[test]
+fn semi_naive_scale_long_chain() {
+    let depth = 300;
+    let mut s = LocalSource::new();
+    // `#n0` in the query resolves to a Hash value (see `p()`/`me()` above) —
+    // build the chain with Hash identities to match, not `Value::str`.
+    let edges: Vec<Tuple> =
+        (0..depth).map(|i| vec![p(&format!("n{i}")), p(&format!("n{}", i + 1))]).collect();
+    s.add("axons", &["from", "to"], edges);
+
+    // `reachable`'s own column is named `x` (its head var, see the
+    // multi-occurrence test above for why the recursive atom binds by that
+    // name, not `axons`'s `to`).
+    let script = "reachable[x] := axons{from: #n0, to: x}\n\
+        reachable[x] := reachable{x: mid}, axons{from: mid, to: x}\n\
+        ?[x] := reachable{x}";
+    let prog = parse(script).expect("parse");
+    let ir = plan(&prog).expect("plan");
+
+    let t0 = std::time::Instant::now();
+    let out = eval(&ir, &s, &Ctx::default()).expect("eval");
+    let elapsed = t0.elapsed();
+    eprintln!("semi-naive {depth}-hop chain closure: {:?}", elapsed);
+
+    assert_eq!(out.rows.len(), depth as usize);
+    assert!(elapsed.as_secs() < 5, "chain closure took {:?} — semi-naive may have regressed to naive re-derivation", elapsed);
+}
+
 /// mirrors lytics' `passage_ids` `mtc` rule shape exactly (an inequality
 /// self-join computing a running count — see
 /// `~/cyber/lytics/rs/ingest/src/inf_reports.rs`), the pattern measured at
