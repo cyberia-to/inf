@@ -14,7 +14,7 @@ pub use expr::Ctx;
 use inf_ast::*;
 use inf_source::RelationSource;
 use inf_value::{Relation, Tuple, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use expr::{eval_call, eval_term, Binding};
 
@@ -189,14 +189,22 @@ fn eval_stratum(
         }
 
         rounds += 1;
+        // A non-recursive stratum's rules read only source relations and
+        // already-fully-computed lower strata (that's what "non-recursive"
+        // means after stratification) — one pass derives every fact there
+        // is to derive. A second round would just re-derive the same facts
+        // and find nothing changed, paying the full join cost again for no
+        // new information (see `.claude/plans/query-optimization.md`). Only
+        // a recursive stratum needs to iterate toward a fixed point.
+        if !stratum.recursive {
+            break;
+        }
         if !changed {
             break;
         }
-        if stratum.recursive {
-            if let Some(b) = stratum.bound {
-                if rounds as u64 >= b {
-                    break;
-                }
+        if let Some(b) = stratum.bound {
+            if rounds as u64 >= b {
+                break;
             }
         }
         if rounds >= HARD_CAP {
@@ -308,14 +316,12 @@ fn step_atom(
             };
             let (cols, rows) = rows_of(&rel, env, src)?;
             let mut out = Vec::new();
+            let idx = bindings.first().and_then(|s| BoundIndex::build(&binds, &cols, &rows, s));
             for b in bindings {
-                let mut matched = false;
-                for row in &rows {
-                    if unify(&binds, row, &cols, &b, ctx)?.is_some() {
-                        matched = true;
-                        break;
-                    }
-                }
+                let matched = match &idx {
+                    Some(i) => any_match(i.candidates(&b, ctx).iter().copied(), &binds, &cols, &b, ctx)?,
+                    None => any_match(rows.iter(), &binds, &cols, &b, ctx)?,
+                };
                 if !matched {
                     out.push(b);
                 }
@@ -323,6 +329,117 @@ fn step_atom(
             Ok(out)
         }
     }
+}
+
+/// A lookup index over a relation's rows, keyed by the columns of a read
+/// that are already fixed before scanning — narrows which rows attempt
+/// `unify` instead of scanning all of them (`.claude/plans/query-optimization.md`
+/// P0). `unify` remains the sole authority on whether a row actually
+/// matches; the index only prunes candidates, so it can never change which
+/// unifications succeed, only how many are attempted.
+struct BoundIndex<'a> {
+    key_cols: Vec<(usize, &'a Term)>,
+    by_key: HashMap<Vec<Value>, Vec<&'a Tuple>>,
+}
+
+impl<'a> BoundIndex<'a> {
+    /// `sample` is one binding from the incoming list. Every binding
+    /// reaching a given atom passed through the same preceding atoms, so
+    /// they all share the same set of bound variable names — one binding is
+    /// enough to decide which of `binds`'s columns are indexable for this
+    /// whole read. Returns `None` when no column is indexable (every bound
+    /// term is a variable still fresh at this atom) — nothing to narrow.
+    fn build(binds: &'a Binds, cols: &[String], rows: &'a [Tuple], sample: &Binding) -> Option<Self> {
+        let key_cols = bound_columns(binds, cols, sample);
+        if key_cols.is_empty() {
+            return None;
+        }
+        let mut by_key: HashMap<Vec<Value>, Vec<&Tuple>> = HashMap::new();
+        for row in rows {
+            let key: Vec<Value> = key_cols.iter().map(|(i, _)| row[*i].clone()).collect();
+            by_key.entry(key).or_default().push(row);
+        }
+        Some(BoundIndex { key_cols, by_key })
+    }
+
+    /// Candidate rows for `b` — empty when `b`'s key isn't present, or when
+    /// a key term can't be evaluated from `b` alone (defensive; the shape
+    /// guarantee in `build` means this shouldn't happen in practice).
+    fn candidates(&self, b: &Binding, ctx: &Ctx) -> &[&'a Tuple] {
+        let mut key = Vec::with_capacity(self.key_cols.len());
+        for (_, term) in &self.key_cols {
+            match index_key_value(term, b, ctx) {
+                Some(v) => key.push(v),
+                None => return &[],
+            }
+        }
+        self.by_key.get(&key).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+}
+
+/// Columns of `binds` whose value is fixed before scanning a row: a
+/// variable already present in `sample`, or any non-variable term (an
+/// expression evaluable from the binding alone — the same class `unify_term`
+/// already evaluates in its non-`Var` branch).
+fn bound_columns<'a>(binds: &'a Binds, cols: &[String], sample: &Binding) -> Vec<(usize, &'a Term)> {
+    let is_bound = |t: &Term| match t {
+        Term::Var(v) => sample.contains_key(v),
+        _ => true,
+    };
+    match binds {
+        Binds::Named(pairs) => pairs
+            .iter()
+            .filter_map(|(col, term)| {
+                cols.iter().position(|c| c == col).filter(|_| is_bound(term)).map(|i| (i, term))
+            })
+            .collect(),
+        Binds::Pos(terms) => terms
+            .iter()
+            .enumerate()
+            .filter(|(i, term)| *i < cols.len() && is_bound(term))
+            .map(|(i, term)| (i, term))
+            .collect(),
+    }
+}
+
+fn index_key_value(term: &Term, b: &Binding, ctx: &Ctx) -> Option<Value> {
+    match term {
+        Term::Var(v) => b.get(v).cloned(),
+        other => eval_term(other, b, ctx).ok(),
+    }
+}
+
+/// Try `unify` against each candidate row, pushing every match into `out`.
+fn join_matches<'r>(
+    rows: impl Iterator<Item = &'r Tuple>,
+    binds: &Binds,
+    cols: &[String],
+    b: &Binding,
+    ctx: &Ctx,
+    out: &mut Vec<Binding>,
+) -> Result<(), EvalError> {
+    for row in rows {
+        if let Some(nb) = unify(binds, row, cols, b, ctx)? {
+            out.push(nb);
+        }
+    }
+    Ok(())
+}
+
+/// Whether any candidate row unifies — short-circuits on the first match.
+fn any_match<'r>(
+    rows: impl Iterator<Item = &'r Tuple>,
+    binds: &Binds,
+    cols: &[String],
+    b: &Binding,
+    ctx: &Ctx,
+) -> Result<bool, EvalError> {
+    for row in rows {
+        if unify(binds, row, cols, b, ctx)?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn read_join(
@@ -335,11 +452,14 @@ fn read_join(
 ) -> Result<Vec<Binding>, EvalError> {
     let (cols, rows) = rows_of(rel, env, src)?;
     let mut out = Vec::new();
+    if bindings.is_empty() || rows.is_empty() {
+        return Ok(out);
+    }
+    let idx = BoundIndex::build(binds, &cols, &rows, &bindings[0]);
     for b in &bindings {
-        for row in &rows {
-            if let Some(nb) = unify(binds, row, &cols, b, ctx)? {
-                out.push(nb);
-            }
+        match &idx {
+            Some(i) => join_matches(i.candidates(b, ctx).iter().copied(), binds, &cols, b, ctx, &mut out)?,
+            None => join_matches(rows.iter(), binds, &cols, b, ctx, &mut out)?,
         }
     }
     Ok(out)

@@ -326,3 +326,77 @@ fn infix_arithmetic_in_bind() {
     assert_eq!(map.get(&p("a")), Some(&Value::int(20)));
     assert_eq!(map.get(&p("d")), Some(&Value::int(2)));
 }
+
+/// mirrors lytics' `passage_ids` `mtc` rule shape exactly (an inequality
+/// self-join computing a running count — see
+/// `~/cyber/lytics/rs/ingest/src/inf_reports.rs`), the pattern measured at
+/// ~485ms for 1600 events before the P0 indexed-join fix
+/// (`.claude/plans/query-optimization.md`). 2000 events here, larger than
+/// the reported bottleneck. asserts correctness and a generous time ceiling
+/// that only trips if the join regresses back to a full O(events ×
+/// arrivals) scan — not a precise timing budget.
+#[test]
+fn scale_inequality_self_join_running_count() {
+    let neurons = 50;
+    let events_per_neuron = 40;
+    let mut s = LocalSource::new();
+
+    let mut ts_ev = Vec::new();
+    let mut arrival_ev = Vec::new();
+    let mut fs = Vec::new();
+    for n in 0..neurons {
+        let neuron = Value::str(&format!("n{n}"));
+        fs.push(vec![neuron.clone(), Value::int(0)]);
+        for i in 0..events_per_neuron {
+            let ts = Value::int(i as i64 * 10);
+            ts_ev.push(vec![neuron.clone(), ts.clone()]);
+            if i % 3 == 0 {
+                arrival_ev.push(vec![neuron.clone(), ts]);
+            }
+        }
+    }
+    s.add("ts_ev", &["neuron", "ts"], ts_ev);
+    s.add("fs", &["neuron", "first"], fs);
+    s.add("arrival_ev", &["neuron", "ts"], arrival_ev);
+
+    let script = "mtc[neuron, ts, arrival_ts] := ts_ev{neuron, ts}, fs{neuron, first}, \
+        arrival_ev{neuron, ts: arrival_ts}, gt(arrival_ts, first), le(arrival_ts, ts)\n\
+        ?[neuron, ts, count(arrival_ts)] := mtc[neuron, ts, arrival_ts]";
+    let prog = parse(script).expect("parse");
+    let ir = plan(&prog).expect("plan");
+
+    let t0 = std::time::Instant::now();
+    let out = eval(&ir, &s, &Ctx::default()).expect("eval");
+    let elapsed = t0.elapsed();
+    eprintln!(
+        "indexed inequality self-join over {} events: {:?}",
+        neurons * events_per_neuron,
+        elapsed
+    );
+    assert!(
+        elapsed.as_secs() < 2,
+        "inequality self-join took {:?} — indexed-join may have regressed",
+        elapsed
+    );
+
+    // mtc is an inner join, not a left join: an event with zero qualifying
+    // arrivals (gt(arrival_ts, first), le(arrival_ts, ts)) produces no row —
+    // matches `passage_ids`' documented gap-fill-to-0 semantics, the caller
+    // defaults missing keys rather than expecting every event present here.
+    // per neuron, events before the first arrival after ts=0 (i.e. ts=0,10,20,
+    // since the next arrival is at ts=30) have no qualifying arrival: 3 events
+    // × 50 neurons = 150 missing.
+    assert_eq!(out.rows.len(), neurons * events_per_neuron - 150);
+
+    // n0 @ ts=50: arrivals strictly after first(=0) and at-or-before 50 are
+    // {30} (0 excluded by gt, 60 excluded by le) ⇒ count 1.
+    let neuron_col = col(&out, "neuron");
+    let ts_col = col(&out, "ts");
+    let cnt_col = col(&out, "arrival_ts");
+    let row = out
+        .rows
+        .iter()
+        .find(|r| r[neuron_col] == Value::str("n0") && r[ts_col] == Value::int(50))
+        .expect("n0 @ ts=50 present");
+    assert_eq!(row[cnt_col], Value::int(1));
+}
