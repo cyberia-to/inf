@@ -67,8 +67,16 @@ pub fn plan(prog: &Program) -> Result<IrProgram, PlanError> {
     let max_s = *stratum.values().max().unwrap_or(&0);
     let mut strata = Vec::new();
     for s in 0..=max_s {
-        let rules: Vec<Rule> =
-            prog.rules.iter().filter(|r| stratum[&head_rel(r)] == s).cloned().collect();
+        let rules: Vec<Rule> = prog
+            .rules
+            .iter()
+            .filter(|r| stratum[&head_rel(r)] == s)
+            .cloned()
+            .map(|mut r| {
+                r.body = reorder_body(r.body);
+                r
+            })
+            .collect();
         if rules.is_empty() {
             continue;
         }
@@ -124,6 +132,180 @@ fn derived_deps(r: &Rule, derived: &HashSet<String>) -> Vec<(String, bool)> {
     }
     out.sort();
     out.dedup();
+    out
+}
+
+// ── join ordering (.claude/plans/query-optimization.md P1) ────────────────────
+//
+// The evaluator threads bindings through `Rule.body` strictly in written
+// order (see inf-eval `eval_body`) — atom order IS join order. Reorder each
+// body once, here, so query authors never have to hand-order joins:
+//
+//   1. filter pushdown — move each `Cond`/`Not`/`Bind` atom to the earliest
+//      point where its free variables are already bound. always safe: a
+//      filter's truth value never depends on when it runs, only on its
+//      variables being bound.
+//   2. most-bound-first among interchangeable `Read`/`Apply` runs — a join
+//      between two positive atoms is commutative, so among atoms that are
+//      simultaneously ready, prefer the one with more already-bound columns
+//      (a static selectivity proxy; `plan()` has no `RelationSource` to ask
+//      for real cardinalities).
+//
+// Implemented as a single greedy schedule: repeatedly pick the
+// highest-priority atom whose free variables are already satisfied. This is
+// a topological sort with a priority tiebreak, not a permutation search — it
+// never reorders past a real dependency, so it can only ever match or beat
+// the original body's join cost. Ties keep the original relative order
+// (stable), which matters for determinism (specs/proof.md).
+
+/// Whether `s` reads only variables already present in `bound` — used both to
+/// decide if an atom is *ready* to run next and, for `Read`/`Apply`, to score
+/// how many of its columns are already fixed.
+fn is_subset(s: &HashSet<String>, bound: &HashSet<String>) -> bool {
+    s.iter().all(|v| bound.contains(v))
+}
+
+/// Variables an atom's free (non-binding) positions require to already be
+/// bound before it can run. For `Read`/`Apply`, a plain `Var` is a
+/// fresh-bind-or-check — it never requires prior binding — but a variable
+/// nested inside a non-`Var` term does (the term is evaluated against the
+/// current binding, same as `unify_term`'s non-`Var` branch). `Not` requires
+/// every variable in its wrapped atom's binds, matching `check_safety`'s
+/// negation-safety rule.
+fn required_vars(atom: &Atom) -> HashSet<String> {
+    let mut acc = HashSet::new();
+    let free_in_binds = |binds: &Binds, acc: &mut HashSet<String>| {
+        let terms: Vec<&Term> = match binds {
+            Binds::Named(pairs) => pairs.iter().map(|(_, t)| t).collect(),
+            Binds::Pos(v) => v.iter().collect(),
+        };
+        for t in terms {
+            if !matches!(t, Term::Var(_)) {
+                term_vars(t, acc);
+            }
+        }
+    };
+    match atom {
+        Atom::Read { binds, .. } => free_in_binds(binds, &mut acc),
+        Atom::Apply { args, .. } => {
+            for t in args {
+                if !matches!(t, Term::Var(_)) {
+                    term_vars(t, &mut acc);
+                }
+            }
+        }
+        Atom::Cond(call) => call.args.iter().for_each(|a| term_vars(a, &mut acc)),
+        Atom::Bind { term, .. } => term_vars(term, &mut acc),
+        Atom::Not(inner) => match inner.as_ref() {
+            Atom::Read { binds, .. } => binds_vars(binds, &mut acc),
+            Atom::Apply { args, .. } => args.iter().for_each(|t| term_vars(t, &mut acc)),
+            _ => {}
+        },
+    }
+    acc
+}
+
+/// Variables an atom adds to the bound set once it has run.
+fn introduced_vars(atom: &Atom) -> HashSet<String> {
+    let mut acc = HashSet::new();
+    let vars_in_binds = |binds: &Binds, acc: &mut HashSet<String>| {
+        let terms: Vec<&Term> = match binds {
+            Binds::Named(pairs) => pairs.iter().map(|(_, t)| t).collect(),
+            Binds::Pos(v) => v.iter().collect(),
+        };
+        for t in terms {
+            if let Term::Var(v) = t {
+                acc.insert(v.clone());
+            }
+        }
+    };
+    match atom {
+        Atom::Read { binds, .. } => vars_in_binds(binds, &mut acc),
+        Atom::Apply { args, .. } => {
+            for t in args {
+                if let Term::Var(v) = t {
+                    acc.insert(v.clone());
+                }
+            }
+        }
+        Atom::Bind { var, .. } => {
+            acc.insert(var.clone());
+        }
+        Atom::Cond(_) | Atom::Not(_) => {}
+    }
+    acc
+}
+
+/// Count of an atom's bind columns whose term is already evaluable given
+/// `bound` — a plain already-bound `Var`, or any non-`Var` term (its free
+/// variables are already confirmed bound, since only *ready* atoms are
+/// scored). Used only to rank `Read`/`Apply` atoms against each other.
+fn bound_column_count(terms: &[&Term], bound: &HashSet<String>) -> usize {
+    terms
+        .iter()
+        .filter(|t| match t {
+            Term::Var(v) => bound.contains(v),
+            _ => true,
+        })
+        .count()
+}
+
+/// Sort key for the greedy schedule: filters/binds (class 0) before relation
+/// reads (class 1); among reads, more already-bound columns first (negated
+/// so a normal ascending sort picks the most-bound atom); original position
+/// breaks ties, keeping the schedule stable and deterministic.
+fn priority_key(atom: &Atom, bound: &HashSet<String>, orig_idx: usize) -> (u8, i64, usize) {
+    match atom {
+        Atom::Cond(_) | Atom::Not(_) | Atom::Bind { .. } => (0, 0, orig_idx),
+        Atom::Read { binds, .. } => {
+            let terms: Vec<&Term> = match binds {
+                Binds::Named(pairs) => pairs.iter().map(|(_, t)| t).collect(),
+                Binds::Pos(v) => v.iter().collect(),
+            };
+            (1, -(bound_column_count(&terms, bound) as i64), orig_idx)
+        }
+        Atom::Apply { args, .. } => {
+            let terms: Vec<&Term> = args.iter().collect();
+            (1, -(bound_column_count(&terms, bound) as i64), orig_idx)
+        }
+    }
+}
+
+/// Reorder one rule body via the greedy schedule above. Falls back to
+/// appending any atom that never becomes ready in its original relative
+/// order — this should not happen for a body that was valid (executable
+/// left-to-right) in its original order, but degrading to a no-op reorder
+/// rather than dropping atoms keeps this pass safe even if that assumption
+/// is ever violated by a future grammar extension.
+fn reorder_body(body: Vec<Atom>) -> Vec<Atom> {
+    let n = body.len();
+    let mut remaining: Vec<(usize, Atom)> = body.into_iter().enumerate().collect();
+    let mut bound: HashSet<String> = HashSet::new();
+    let mut out: Vec<Atom> = Vec::with_capacity(n);
+
+    while !remaining.is_empty() {
+        let mut best: Option<(usize, (u8, i64, usize))> = None;
+        for (pos, (orig_idx, atom)) in remaining.iter().enumerate() {
+            if !is_subset(&required_vars(atom), &bound) {
+                continue;
+            }
+            let key = priority_key(atom, &bound, *orig_idx);
+            if best.is_none_or(|(_, bk)| key < bk) {
+                best = Some((pos, key));
+            }
+        }
+        match best {
+            Some((pos, _)) => {
+                let (_, atom) = remaining.remove(pos);
+                bound.extend(introduced_vars(&atom));
+                out.push(atom);
+            }
+            None => {
+                out.extend(remaining.into_iter().map(|(_, a)| a));
+                break;
+            }
+        }
+    }
     out
 }
 
@@ -226,6 +408,45 @@ mod tests {
         assert_eq!(rec.bound, Some(5));
         // the recursive stratum defines `reachable`
         assert!(rec.rules.iter().any(|r| r.head.name.as_deref() == Some("reachable")));
+    }
+
+    #[test]
+    fn reordering_prefers_the_more_bound_read_among_ready_atoms() {
+        // `b{x, y}` shares `x` with the preceding read, so it becomes ready
+        // with one already-bound column once `a{x}` runs; `c{y}` shares
+        // nothing with what's bound so far. the planner should schedule the
+        // join (`b`) before the unrelated scan (`c`) even though `c` was
+        // written first (P1, query-optimization.md).
+        let p = ir("?[x, y] := a{x}, c{y}, b{x, y}");
+        let entry = p.strata.last().unwrap().rules.iter().find(|r| r.head.name.is_none()).unwrap();
+        let names: Vec<&str> = entry.body.iter().filter_map(|a| a.rel_name()).collect();
+        assert_eq!(names, vec!["a", "b", "c"], "b (shares x) should schedule before c (shares nothing)");
+    }
+
+    #[test]
+    fn reordering_pushes_cond_atoms_to_their_earliest_bound_point() {
+        // mirrors lytics' passage_ids `mtc` rule exactly: two Cond filters
+        // depend on `arrival_ts`, which only the third read introduces —
+        // they must land strictly after it, never before.
+        let p = ir(
+            "mtc[neuron, ts, arrival_ts] := ts_ev{neuron, ts}, fs{neuron, first}, arrival_ev{neuron, ts: arrival_ts}, gt(arrival_ts, first), le(arrival_ts, ts)\n?[neuron, ts, count(arrival_ts)] := mtc[neuron, ts, arrival_ts]",
+        );
+        let mtc = p
+            .strata
+            .iter()
+            .flat_map(|s| &s.rules)
+            .find(|r| r.head.name.as_deref() == Some("mtc"))
+            .unwrap();
+        let arrival_pos = mtc
+            .body
+            .iter()
+            .position(|a| matches!(a, Atom::Read { rel, .. } if rel == "arrival_ev"))
+            .unwrap();
+        for (i, a) in mtc.body.iter().enumerate() {
+            if let Atom::Cond(c) = a {
+                assert!(i > arrival_pos, "{} must run after arrival_ev binds arrival_ts", c.func);
+            }
+        }
     }
 
     #[test]
