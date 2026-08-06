@@ -37,6 +37,28 @@ pub fn plan(prog: &Program) -> Result<IrProgram, PlanError> {
         check_safety(r)?;
     }
 
+    // Relations with at least one defining rule that aggregates in its head.
+    // A rule *reading* such a relation must be strictly above it regardless
+    // of whether the reading rule itself aggregates — an aggregate is not
+    // safe to co-stratify with its own consumers, because it is not
+    // incrementally monotonic the way a plain join is: a consumer sharing
+    // its stratum would see partial (mid-fixed-point) aggregate state, and
+    // — since the stratum then gets marked `recursive` purely because a
+    // same-stratum consumer references it (see the `in_stratum` check
+    // below) — the semi-naive evaluator would iterate a chain that is a
+    // straight-line DAG (A defines an aggregate, B reads A, neither reads
+    // the other back) as if it were a real cycle, with no fixed point to
+    // reach. found live: `et[…, min(ts)] := …` consumed by a plain
+    // (non-aggregating, non-entry) `epath[…] := et[…], …` landed in the
+    // same stratum and was flagged recursive despite zero cyclic
+    // dependency between them.
+    let aggregating: HashSet<String> = prog
+        .rules
+        .iter()
+        .filter(|r| r.head.has_aggr())
+        .map(head_rel)
+        .collect();
+
     // Stratum numbers by fixed-point relaxation: positive deps keep the stratum,
     // negation/aggregation deps push one higher. A strict cycle never converges.
     let names: Vec<String> = derived.iter().cloned().collect();
@@ -48,7 +70,7 @@ pub fn plan(prog: &Program) -> Result<IrProgram, PlanError> {
         let mut changed = false;
         for r in &prog.rules {
             let h = head_rel(r);
-            for (g, strict) in derived_deps(r, &derived) {
+            for (g, strict) in derived_deps(r, &derived, &aggregating) {
                 let want = stratum[&g] + usize::from(strict);
                 if want > stratum[&h] {
                     *stratum.get_mut(&h).unwrap() = want;
@@ -81,9 +103,11 @@ pub fn plan(prog: &Program) -> Result<IrProgram, PlanError> {
             continue;
         }
         let in_stratum: HashSet<String> = rules.iter().map(head_rel).collect();
-        let recursive = rules
-            .iter()
-            .any(|r| derived_deps(r, &derived).iter().any(|(g, _)| in_stratum.contains(g)));
+        let recursive = rules.iter().any(|r| {
+            derived_deps(r, &derived, &aggregating)
+                .iter()
+                .any(|(g, _)| in_stratum.contains(g))
+        });
         let bound = rules.iter().filter_map(|r| r.bound).max();
         strata.push(Stratum { rules, recursive, bound });
     }
@@ -98,11 +122,16 @@ pub fn plan(prog: &Program) -> Result<IrProgram, PlanError> {
 }
 
 /// Derived relations a rule depends on, with strictness (must be a lower
-/// stratum). Negation and aggregation are strict. The entry rule `?` is forced
-/// strictly above its dependencies so it observes the final, fully-computed
-/// relations — a non-recursive projection never shares a stratum with the
-/// recursion it reads.
-fn derived_deps(r: &Rule, derived: &HashSet<String>) -> Vec<(String, bool)> {
+/// stratum). Negation and aggregation are strict — either the *reading*
+/// rule aggregates (`base_strict`), the reference is the entry rule
+/// (`base_strict`), or the referenced relation `rel` is itself defined by an
+/// aggregating rule (`aggregating.contains(rel)`, checked per dependency,
+/// not folded into `base_strict` — a rule can read one aggregated relation
+/// and one plain one in the same body, and only the former needs the strict
+/// edge). the entry rule `?` is forced strictly above its dependencies so it
+/// observes the final, fully-computed relations — a non-recursive
+/// projection never shares a stratum with the recursion it reads.
+fn derived_deps(r: &Rule, derived: &HashSet<String>, aggregating: &HashSet<String>) -> Vec<(String, bool)> {
     let base_strict = r.head.has_aggr() || r.head.name.is_none();
     let mut out = Vec::new();
     if let Some(f) = &r.fixed {
@@ -115,10 +144,8 @@ fn derived_deps(r: &Rule, derived: &HashSet<String>) -> Vec<(String, bool)> {
     }
     for a in &r.body {
         match a {
-            Atom::Read { rel, .. } | Atom::Apply { rule: rel, .. } => {
-                if derived.contains(rel) {
-                    out.push((rel.clone(), base_strict));
-                }
+            Atom::Read { rel, .. } | Atom::Apply { rule: rel, .. } if derived.contains(rel) => {
+                out.push((rel.clone(), base_strict || aggregating.contains(rel)));
             }
             Atom::Not(inner) => {
                 if let Some(rel) = inner.rel_name() {
@@ -422,6 +449,25 @@ mod tests {
         let p = ir("?[to, s] := axons{from: #seed, to}, focus{particle: to, score: s}");
         assert_eq!(p.strata.len(), 1);
         assert!(!p.strata[0].recursive);
+    }
+
+    #[test]
+    fn plain_rule_reading_an_aggregate_is_not_misflagged_recursive() {
+        // a straight-line DAG — `et` aggregates, `epath` reads it and does
+        // not aggregate itself, `epath` is not `et`'s own consumer looped
+        // back. found live (lytics): `et`/`epath` landed in the same
+        // stratum and were flagged `recursive`, because the strictness of
+        // `epath`'s dependency on `et` was decided by `epath`'s own head
+        // (no aggregate → not strict) rather than by whether `et` itself is
+        // aggregate-defined (it is). the semi-naive evaluator then iterated
+        // a chain with no fixed point to reach.
+        let p = ir(
+            r#"et[neuron, passage_id, min(ts)] := pid{neuron, ts, passage_id}, ev2{neuron, ts, kind: "pageview"}
+epath[neuron, passage_id, pathname] := et[neuron, passage_id, entry_ts], ev2{neuron, ts: entry_ts, pathname}
+?[pathname, count(passage_id)] := epath[neuron, passage_id, pathname]"#,
+        );
+        assert_eq!(p.strata.len(), 3, "et, epath, and ? each get their own stratum");
+        assert!(p.strata.iter().all(|s| !s.recursive), "no stratum here is a real cycle");
     }
 
     #[test]
