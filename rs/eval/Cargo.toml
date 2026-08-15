@@ -1,19 +1,22 @@
 [package]
+repository = "https://github.com/cyberia-to/inf"
+description = "inf evaluator"
 name = "inf-eval"
 version = "0.1.0"
-edition.workspace = true
-license.workspace = true
+edition = "2021"
+license-file = "LICENSE"
 
 [lib]
 path = "src/lib.rs"
 
 [dependencies]
-inf-ast = { path = "../ast" }
-inf-value = { path = "../value" }
-inf-source = { path = "../source" }
+inf-ast = { version = "0.1.0", path = "../ast" }
+inf-value = { version = "0.1.0", path = "../value" }
+inf-source = { version = "0.1.0", path = "../source" }
 regex = "1"
 serde_json = "1"
 
 [dev-dependencies]
-inf-parse = { path = "../parse" }
-inf-plan = { path = "../plan" }
+inf-parse = { version = "0.1.0", path = "../parse" }
+inf-plan = { version = "0.1.0", path = "../plan" }
+

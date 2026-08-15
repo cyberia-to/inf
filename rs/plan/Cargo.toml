@@ -1,14 +1,17 @@
 [package]
+repository = "https://github.com/cyberia-to/inf"
+description = "inf query planner"
 name = "inf-plan"
 version = "0.1.0"
-edition.workspace = true
-license.workspace = true
+edition = "2021"
+license-file = "LICENSE"
 
 [lib]
 path = "src/lib.rs"
 
 [dependencies]
-inf-ast = { path = "../ast" }
+inf-ast = { version = "0.1.0", path = "../ast" }
 
 [dev-dependencies]
-inf-parse = { path = "../parse" }
+inf-parse = { version = "0.1.0", path = "../parse" }
+
