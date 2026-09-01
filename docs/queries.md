@@ -205,4 +205,4 @@ chain[particle, min(depth)] := chain[mid, d],
 - [[inf/stored relations]] — schema, mutations, transactions
 - [[inf/algorithms]] — fixed rule catalog: PageRank, Dijkstra, Louvain, BFS
 - [[inf/functions]] — built-in function reference
-- [[inf/cybergraph]] — cybergraph integration and [[rune]] interop
+- [[inf cybergraph]] — cybergraph integration and [[rune]] interop
