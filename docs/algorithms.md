@@ -2,7 +2,7 @@
 tags: cyber
 crystal-type: entity
 crystal-domain: cyber
-alias: graph algorithms, fixed rules
+alias: inf algorithms, graph algorithms, fixed rules
 ---
 built-in graph algorithms available as fixed rules (`<~`) in [[datalog]]. these run native implementations inside the CozoDB query engine — no external libraries, no data export
 
@@ -195,6 +195,6 @@ visited[node] <~ RandomWalk(edges[], "QmStartHash", steps: 50, times: 20)
 :limit 20
 ```
 
-see [[datalog]] for language overview. see [[inf/queries]] for CozoScript syntax. see [[cyberank]] for how PageRank generalizes into the [[tri-kernel]]
+see [[datalog]] for language overview. see [[inf queries]] for CozoScript syntax. see [[cyberank]] for how PageRank generalizes into the [[tri-kernel]]
 
 discover all [[concepts]]

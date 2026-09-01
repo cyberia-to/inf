@@ -2,7 +2,7 @@
 tags: cyber
 crystal-type: entity
 crystal-domain: cyber
-alias: stored relation
+alias: inf stored relations, stored relation
 ---
 stored relations are how data persists in [[datalog]]. where inline rules exist only during query execution, stored relations survive across sessions — they are the permanent memory of the [[cybergraph]]
 
@@ -179,4 +179,4 @@ this retrieves the top 50 [[particles]] by [[focus]] score, joined with the [[ka
 
 ## relation to the stack
 
-stored relations are the persistence layer. [[rune]] writes into them via mutations. [[inf/queries]] read from them via pattern matching. [[inf/algorithms]] operate over them as graph structures. time-travel queries (using [[Validity]] columns) reconstruct any past state of the [[cybergraph]]
+stored relations are the persistence layer. [[rune]] writes into them via mutations. [[inf queries]] read from them via pattern matching. [[inf algorithms]] operate over them as graph structures. time-travel queries (using [[Validity]] columns) reconstruct any past state of the [[cybergraph]]

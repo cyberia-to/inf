@@ -2,6 +2,7 @@
 tags: cyber
 crystal-type: entity
 crystal-domain: cyber
+alias: inf functions
 ---
 built-in function reference for [[datalog]] (CozoScript). all functions are available in rule bodies, expressions, and aggregation contexts
 
@@ -173,4 +174,4 @@ used in rule heads for grouping and reduction
 
 semi-lattice aggregation allows self-recursion — required for recursive shortest-path and reachability queries over the [[cybergraph]]
 
-see [[inf/queries]] for how aggregation works in rule heads. see [[inf/algorithms]] for fixed-rule graph algorithms
+see [[inf queries]] for how aggregation works in rule heads. see [[inf algorithms]] for fixed-rule graph algorithms

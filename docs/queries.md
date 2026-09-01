@@ -2,6 +2,7 @@
 tags: cyber
 crystal-type: entity
 crystal-domain: cyber
+alias: inf queries
 ---
 [[CozoScript]] query syntax reference for [[datalog]] on the [[cybergraph]]
 
@@ -21,7 +22,7 @@ relevant[particle] := *karma{neuron, k}, k > 1000,
 
 ### fixed rules `<~`
 
-built-in [[algorithms]] callable as first-class query operations: [[PageRank]], [[Dijkstra]], community detection, random walk. see [[inf/algorithms]] for the full catalog
+built-in [[algorithms]] callable as first-class query operations: [[PageRank]], [[Dijkstra]], community detection, random walk. see [[inf algorithms]] for the full catalog
 
 ```datalog
 ranked[particle, score] <~ PageRank(*cyberlinks[from, to])
@@ -202,7 +203,7 @@ chain[particle, min(depth)] := chain[mid, d],
 ## see also
 
 - [[datalog]] — language overview and design principles
-- [[inf/stored relations]] — schema, mutations, transactions
-- [[inf/algorithms]] — fixed rule catalog: PageRank, Dijkstra, Louvain, BFS
-- [[inf/functions]] — built-in function reference
+- [[inf stored relations]] — schema, mutations, transactions
+- [[inf algorithms]] — fixed rule catalog: PageRank, Dijkstra, Louvain, BFS
+- [[inf functions]] — built-in function reference
 - [[inf cybergraph]] — cybergraph integration and [[rune]] interop
