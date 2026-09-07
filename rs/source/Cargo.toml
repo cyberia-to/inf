@@ -16,5 +16,5 @@ bbg = ["dep:bbg"]
 
 [dependencies]
 inf-value = { version = "0.1.0", path = "../value" }
-bbg = { version = "0.1", optional = true }
+bbg = { version = "0.1", path = "../../../bbg/rs", optional = true }
 
