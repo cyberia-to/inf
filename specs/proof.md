@@ -75,6 +75,27 @@ which `inf cost` bounds (see [cost](cost.md)); it does not raise verifier cost.
 
 ## recursion and completeness
 
+### complete input coverage
+
+complete evaluation binds the requested relation/view, snapshot root, scope and
+query parameters. the proof authenticates coverage of that whole input domain
+and the exact derived result. individual row openings establish membership;
+complete enumeration, authenticated range boundaries or a sound selection
+argument establish coverage, including excluded rows where required.
+
+a derived or indexed input carries its own complete derivation from the root.
+an externally supplied subset remains a conditional witness until that binding
+is proven. empty results, pagination and bounded evaluation retain their declared
+scope: a partial result cannot certify completion of a larger request.
+
+[verifiable private retrieval](../../cybergraph/docs/private-retrieval.md)
+applies this existing contract to encrypted detection and PIR evaluation over a
+committed notification board. the server proves ciphertext computation across
+the declared domain while recipient decryption stays local. proof generation
+cost and query privacy follow the selected backend and protocol profile.
+
+### recursive closure
+
 a bounded recursive rule proves as a fold of at most the snapshot bound rounds
 (see [language](language.md)). a convergence witness proves the semi-naive delta
 is empty at the round the result stabilized, certifying completeness — no
