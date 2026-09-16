@@ -10,11 +10,10 @@ license-file = "LICENSE"
 path = "src/lib.rs"
 
 [features]
-# `BbgSource` over real committed BBG state (R3b). Pulls bbg → nox → … so this
-# feature needs `RUSTC_BOOTSTRAP=1`; the default build stays pure stable Rust.
+# Optional committed BBG snapshot adapter. The default query source has no
+# storage/VM dependency; select this feature only at the graph host boundary.
 bbg = ["dep:bbg"]
 
 [dependencies]
 inf-value = { version = "0.1.0", path = "../value" }
-bbg = { version = "0.1", path = "../../../bbg/rs", optional = true }
-
+bbg = { version = "0.3", path = "../../../bbg/rs", optional = true }
