@@ -7,6 +7,7 @@
 
 mod field;
 pub use field::{F, P};
+pub use neuron_id::NeuronId;
 
 /// A runtime value. The numeric atoms are exact: `Int` for ordinary integers and
 /// counts, `Field` for Goldilocks field elements (scores, weights as committed),
@@ -42,6 +43,12 @@ impl Value {
     }
     pub fn hash(h: [u8; 32]) -> Value {
         Value::Hash(h)
+    }
+    /// Unchanged native subject bytes. The relation's schema supplies domain
+    /// meaning; this value establishes neither custody nor authority. Foreign
+    /// addresses require explicit domain/address columns, never hashing here.
+    pub fn neuron(id: NeuronId) -> Value {
+        Value::Hash(id)
     }
     pub fn str(s: &str) -> Value {
         Value::Bytes(s.as_bytes().to_vec())

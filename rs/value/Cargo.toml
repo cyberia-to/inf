@@ -9,3 +9,5 @@ license-file = "LICENSE"
 [lib]
 path = "src/lib.rs"
 
+[dependencies]
+neuron-id = { path = "../../../neuron/id", version = "0.1" }

@@ -10,8 +10,8 @@
 //!
 //! Relation names map 1:1 to bbg dimensions. `axons_out`/`axons_in` are flattened
 //! from adjacency lists into edge tuples; `axons` is an alias for `axons_out`.
-//! `balances` is read from the in-memory map for completeness but is a private
-//! dimension — neuron-scoping is deferred (a later R3b sub-step).
+//! `balances` is the public opt-in map H(owner || token) → u64. Private A/N
+//! state and opening keys are not exposed. See bbg/specs/state.md and privacy.md.
 
 use bbg::state::BbgState;
 use inf_value::{Tuple, Value};
@@ -86,7 +86,7 @@ impl<'a> RelationSource for BbgSource<'a> {
             "neurons" => Box::new(
                 s.neurons
                     .iter()
-                    .map(|(k, v)| vec![Value::hash(*k), w(v.focus), w(v.karma), w(v.stake)]),
+                    .map(|(k, v)| vec![Value::neuron(*k), w(v.focus), w(v.karma), w(v.stake)]),
             ),
             "locations" => Box::new(s.locations.iter().map(|(k, v)| {
                 vec![Value::hash(*k), Value::int(v.lat as i64), Value::int(v.lon as i64)]
@@ -104,7 +104,7 @@ impl<'a> RelationSource for BbgSource<'a> {
             "signals" => Box::new(s.signals.iter().map(|(step, v)| {
                 vec![
                     w(*step),
-                    Value::hash(v.neuron),
+                    Value::neuron(v.neuron),
                     w(v.link_count as u64),
                     w(v.block_height),
                     Value::hash(v.proof_hash),
