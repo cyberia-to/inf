@@ -136,6 +136,18 @@ scratch.
 
 ## see also
 
+The Rust `BbgSource` exposes a committed host snapshot with `provable() == false`;
+it does not yet produce per-read proofs described by the target contract above.
+Its `balances` relation is the public opt-in balance map, never private A/N.
+Native subject columns use unchanged NeuronId/Hash bytes; foreign addresses are
+domain-qualified values in their adapter, not hashes pretending to be native IDs.
+
+Execution relations are owned by
+[neuron's query projection](../../neuron/specs/query-projection.md), implemented
+by the optional `neuron-node/query` host adapter. `progs`, `invocations`,
+`operations` and `legacy_origins` are immutable read-only views of one explicit
+subject and commit. Inf itself imports neither neuron engine nor custody.
+
 - cybergraph/specs/query.md — canonical relation schemas (the source of truth)
 - [language](language.md) — value model, rules, mutation
 - [proof](proof.md) — how a read or an appended set certifies against a root
