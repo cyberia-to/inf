@@ -277,6 +277,32 @@ fn fixed_rule_random_walk_seeded_deterministic() {
     assert_eq!(run(q).rows, out.rows, "seeded walk is deterministic");
 }
 
+/// `iters`/`steps`/`times`/`k` are query-supplied `i64`s with no bound of
+/// their own; each drives a loop whose cost is otherwise unbounded (trident
+/// constraint 1 requires a fixed round count, not a data-dependent one). An
+/// out-of-range value must be rejected, not accepted into a hang.
+#[test]
+fn fixed_rule_rejects_out_of_range_loop_counts() {
+    let ir = |q: &str| {
+        let prog = inf_parse::parse(q).expect("parse");
+        inf_plan::plan(&prog).expect("plan")
+    };
+    let cases = [
+        ("edges[from, to] := axons{from, to}\n?[node, x] <~ LabelPropagation(edges[], iters: 999999999999)", "iters"),
+        ("edges[from, to] := axons{from, to}\n?[node, x] <~ LabelPropagation(edges[], iters: -1)", "iters"),
+        ("edges[from, to] := axons{from, to}\n?[node, v] <~ RandomWalk(edges[], #seed, steps: 999999999999, times: 1)", "steps"),
+        ("edges[from, to] := axons{from, to}\n?[node, v] <~ RandomWalk(edges[], #seed, steps: 5, times: 999999999999)", "times"),
+        (
+            "edges[from, to, w] := axons{from, to, weight_sum: w}\n?[path, cost] <~ KShortestPathYen(edges[], #seed, #c, k: 999999999999)",
+            "k",
+        ),
+    ];
+    for (q, param) in cases {
+        let err = eval(&ir(q), &fixture(), &Ctx::default()).expect_err(&format!("{param} out of range"));
+        assert!(err.msg.contains(param), "unexpected message for {param}: {}", err.msg);
+    }
+}
+
 #[test]
 fn reactive_re_evaluates_on_subscribed_events() {
     let ir = plan(&parse("?[to] := axons{from: #seed, to}\n:subscribe axons").unwrap()).unwrap();

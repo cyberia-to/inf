@@ -7,6 +7,12 @@ use crate::fixed::{reconstruct, Graph, PR_SCALE_PUB as SCALE};
 use inf_value::{Tuple, Value};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+/// Trident constraint 1 (specs/algorithms.md): iterative fixed rules run a
+/// fixed round count, never a data-dependent unbounded one. `iters`/`steps`/
+/// `times`/`k` are query-supplied `i64`s with no other bound on this path;
+/// this is the static cap that keeps them from driving an unbounded loop.
+const MAX_ITERS: i64 = 10_000;
+
 pub fn run(
     algo: &str,
     g: &Graph,
@@ -15,10 +21,17 @@ pub fn run(
 ) -> Result<Vec<Tuple>, String> {
     let p = |k: &str, d: i64| params.iter().find(|(n, _)| n == k).map(|(_, v)| *v).unwrap_or(d);
     let at = |i: usize| pos.get(i).cloned().ok_or_else(|| format!("`{algo}` missing argument {i}"));
+    let bounded = |name: &str, v: i64| -> Result<i64, String> {
+        if (0..=MAX_ITERS).contains(&v) {
+            Ok(v)
+        } else {
+            Err(format!("`{algo}`: {name} must be 0..={MAX_ITERS}, got {v}"))
+        }
+    };
     match algo {
         "ClosenessCentrality" => Ok(closeness(g)),
         "BetweennessCentrality" => Ok(betweenness(g)),
-        "LabelPropagation" => Ok(label_propagation(g, p("iters", 10))),
+        "LabelPropagation" => Ok(label_propagation(g, bounded("iters", p("iters", 10))?)),
         "ClusteringCoefficients" => Ok(clustering(g)),
         "CommunityDetectionLouvain" => Ok(louvain(g)),
         "MinimumSpanningForestKruskal" | "MinimumSpanningTreePrim" => Ok(kruskal(g)),
@@ -26,8 +39,15 @@ pub fn run(
             Some((path, cost)) => vec![vec![Value::List(path), Value::Int(cost)]],
             None => vec![],
         }),
-        "KShortestPathYen" => Ok(yen(g, &at(0)?, &at(1)?, p("k", 3).max(1) as usize)),
-        "RandomWalk" => Ok(random_walk(g, &at(0)?, p("steps", 10), p("times", 1), p("seed", 1) as u64)),
+        "KShortestPathYen" => {
+            let k = bounded("k", p("k", 3).max(1))? as usize;
+            Ok(yen(g, &at(0)?, &at(1)?, k))
+        }
+        "RandomWalk" => {
+            let steps = bounded("steps", p("steps", 10))?;
+            let times = bounded("times", p("times", 1))?;
+            Ok(random_walk(g, &at(0)?, steps, times, p("seed", 1) as u64))
+        }
         other => Err(format!("fixed rule `{other}` is not implemented in the reference engine")),
     }
 }
