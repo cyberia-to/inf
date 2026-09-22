@@ -220,3 +220,100 @@ fn fmt_value(v: &Value) -> String {
 
 #[allow(dead_code)]
 fn _tuple_marker(_: &Tuple) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use inf_value::F;
+
+    // matches demo::graph()'s axons/focus schema exactly (see inf-parse's own
+    // vertical_slice test).
+    const VALID: &str = "?[to, score] := axons{from: #seed, to}, focus{particle: to, score}, gt(score, 5)\n:sort -score\n:limit 20";
+    const RECURSIVE: &str = "reachable[p] := axons{from: #seed, to: p}\nreachable[p] := reachable[mid], axons{from: mid, to: p}\n?[p] := reachable[p]\n:bounded 5";
+
+    #[test]
+    fn parse_plan_accepts_a_valid_program() {
+        let ir = parse_plan(VALID).unwrap();
+        assert_eq!(ir.strata.len(), 1);
+    }
+
+    #[test]
+    fn parse_plan_rejects_a_syntax_error_with_code_one() {
+        assert_eq!(parse_plan("not inf syntax {{{").unwrap_err(), 1);
+    }
+
+    #[test]
+    fn cmd_run_reports_an_eval_error_for_an_unresolved_relation() {
+        // parses and plans fine — relation existence is an eval-time concern,
+        // not a plan()-time one.
+        assert_eq!(cmd_run("?[x] := nonexistent_relation{x}"), 1);
+    }
+
+    #[test]
+    fn cmd_check_reports_stratum_and_recursion_shape() {
+        assert_eq!(cmd_check(VALID), 0);
+        assert_eq!(cmd_check(RECURSIVE), 0);
+        assert_eq!(cmd_check("not inf syntax {{{"), 1);
+    }
+
+    #[test]
+    fn cmd_plan_succeeds_on_a_valid_program_and_propagates_errors() {
+        assert_eq!(cmd_plan(VALID), 0);
+        assert_eq!(cmd_plan(RECURSIVE), 0);
+        assert_eq!(cmd_plan("not inf syntax {{{"), 1);
+    }
+
+    #[test]
+    fn cmd_cost_succeeds_on_a_valid_program_and_propagates_errors() {
+        assert_eq!(cmd_cost(VALID), 0);
+        assert_eq!(cmd_cost(RECURSIVE), 0);
+        assert_eq!(cmd_cost("not inf syntax {{{"), 1);
+    }
+
+    #[test]
+    fn cmd_run_succeeds_on_a_valid_program_and_propagates_parse_errors() {
+        assert_eq!(cmd_run(VALID), 0);
+        assert_eq!(cmd_run("not inf syntax {{{"), 1);
+    }
+
+    #[test]
+    fn fmt_value_null_bool_int_word() {
+        assert_eq!(fmt_value(&Value::Null), "null");
+        assert_eq!(fmt_value(&Value::Bool(true)), "true");
+        assert_eq!(fmt_value(&Value::Bool(false)), "false");
+        assert_eq!(fmt_value(&Value::Int(-3)), "-3");
+        assert_eq!(fmt_value(&Value::Word(9)), "9");
+    }
+
+    #[test]
+    fn fmt_value_field_uses_f_prefix() {
+        assert_eq!(fmt_value(&Value::Field(F::from_u64(7))), "f7");
+    }
+
+    #[test]
+    fn fmt_value_hash_prints_first_four_bytes() {
+        let mut h = [0u8; 32];
+        h[0] = 0xde;
+        h[1] = 0xad;
+        h[2] = 0xbe;
+        h[3] = 0xef;
+        h[4] = 0xff; // must not appear — only the first four bytes print
+        assert_eq!(fmt_value(&Value::Hash(h)), "#deadbeef");
+    }
+
+    #[test]
+    fn fmt_value_bytes_prints_valid_utf8_as_a_quoted_string() {
+        assert_eq!(fmt_value(&Value::Bytes(b"hi".to_vec())), "\"hi\"");
+    }
+
+    #[test]
+    fn fmt_value_bytes_falls_back_to_hex_for_invalid_utf8() {
+        assert_eq!(fmt_value(&Value::Bytes(vec![0xff, 0x00])), "0xff00");
+    }
+
+    #[test]
+    fn fmt_value_list_joins_elements_with_comma_space() {
+        let v = Value::List(vec![Value::Int(1), Value::Bool(true), Value::Null]);
+        assert_eq!(fmt_value(&v), "[1, true, null]");
+    }
+}
