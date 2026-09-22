@@ -10,6 +10,12 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 const PR_SCALE: i64 = 1_000_000;
 
+/// Trident constraint 1 (specs/algorithms.md): iterative algorithms run a
+/// fixed iteration count, never a data-dependent unbounded loop. `iters` is
+/// a query-supplied `i64` (specs/algorithms.md:41); this is the static cap
+/// that keeps a query's declared cost ceiling honest.
+const MAX_PR_ITERS: i64 = 10_000;
+
 /// Edges as (from, to, weight). The edges relation is read positionally:
 /// column 0 = from, 1 = to, optional 2 = integer weight (default 1).
 pub(crate) struct Graph {
@@ -332,13 +338,23 @@ fn top_sort(g: &Graph) -> Result<Vec<Tuple>, String> {
 }
 
 fn page_rank(g: &Graph, theta_pct: i64, iters: i64) -> Result<Vec<Tuple>, String> {
+    if !(0..=100).contains(&theta_pct) {
+        return Err(format!(
+            "PageRank: theta must be an integer percent 0..=100, got {theta_pct}"
+        ));
+    }
+    if !(0..=MAX_PR_ITERS).contains(&iters) {
+        return Err(format!(
+            "PageRank: iters must be 0..={MAX_PR_ITERS}, got {iters}"
+        ));
+    }
     let n = g.nodes.len() as i64;
     if n == 0 {
         return Ok(vec![]);
     }
     let (num, den) = (theta_pct, 100i64);
     let mut rank: BTreeMap<Value, i64> = g.nodes.iter().map(|v| (v.clone(), PR_SCALE / n)).collect();
-    for _ in 0..iters.max(0) {
+    for _ in 0..iters {
         let dangling: i64 = g
             .nodes
             .iter()

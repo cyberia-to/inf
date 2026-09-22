@@ -227,6 +227,43 @@ fn fixed_rule_pagerank_deterministic_and_positive() {
     assert_eq!(run(q).rows, out.rows);
 }
 
+/// theta is a query-supplied `i64` (specs/algorithms.md documents it as an
+/// integer percent); out of 0..=100 it must be rejected, not fed into the
+/// fixed-point arithmetic where it can overflow (theta * PR_SCALE) or wrap
+/// silently in a release build.
+#[test]
+fn fixed_rule_pagerank_rejects_theta_out_of_range() {
+    let ir = |q: &str| {
+        let prog = inf_parse::parse(q).expect("parse");
+        inf_plan::plan(&prog).expect("plan")
+    };
+    for theta in [-1i64, 101, 999_999_999_999_999] {
+        let q = format!(
+            "edges[from, to] := axons{{from, to}}\n?[node, rank] <~ PageRank(edges[], theta: {theta}, iters: 5)"
+        );
+        let err = eval(&ir(&q), &fixture(), &Ctx::default()).expect_err("theta out of range");
+        assert!(err.msg.contains("theta"), "unexpected message: {}", err.msg);
+    }
+}
+
+/// iters is likewise query-supplied and otherwise unbounded: trident
+/// constraint 1 requires a static iteration cap, not a data-dependent loop
+/// a query can blow past to hang the evaluator.
+#[test]
+fn fixed_rule_pagerank_rejects_iters_out_of_range() {
+    let ir = |q: &str| {
+        let prog = inf_parse::parse(q).expect("parse");
+        inf_plan::plan(&prog).expect("plan")
+    };
+    for iters in [-1i64, 10_001, 999_999_999_999_999] {
+        let q = format!(
+            "edges[from, to] := axons{{from, to}}\n?[node, rank] <~ PageRank(edges[], iters: {iters})"
+        );
+        let err = eval(&ir(&q), &fixture(), &Ctx::default()).expect_err("iters out of range");
+        assert!(err.msg.contains("iters"), "unexpected message: {}", err.msg);
+    }
+}
+
 #[test]
 fn fixed_rule_mst_and_astar_and_yen() {
     // MST of the (tree) fixture: all 4 edges, total weight 10+5+2+1 = 18
