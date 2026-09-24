@@ -322,13 +322,18 @@ pub fn prove_expr(t: &Term) -> Result<(u64, zheng::TraceProof), LowerError> {
     let result = g.as_u64();
 
     // Prove the trace. Pure arithmetic traces have no hash, axis, or look rows —
-    // pass empty slices. The Statement uses zero hashes (no BBG root binding yet;
-    // that arrives with R3 BbgSource integration).
+    // pass empty slices. The Statement uses zero hashes and an unbounded
+    // `focus_bound` (no BBG root or result binding yet; that arrives with R3
+    // BbgSource integration) — `verify_expr_proof` must build the identical
+    // Statement, since `zheng::verify` absorbs it byte-for-byte into the same
+    // Fiat-Shamir transcript `commit` used; any field that differs between the
+    // two desyncs the transcript and every proof fails to verify.
     let statement = zheng::Statement {
         program_hash: [0u8; 32],
         input_hash: [0u8; 32],
         output_hash: [0u8; 32],
-        focus_bound: tracer.0.len() as u64,
+        focus_bound: 0,
+        bbg_root: [0u8; 32],
     };
     let params = zheng::ProofParams::default();
     let proof = zheng::commit(&tracer, &[], &[], &[], &statement, &params)
@@ -336,14 +341,22 @@ pub fn prove_expr(t: &Term) -> Result<(u64, zheng::TraceProof), LowerError> {
     Ok((result, proof))
 }
 
-/// Verify a proof produced by `prove_expr`.
+/// Verify a proof produced by `prove_expr` or `prove_cond`.
+///
+/// Must build the exact `Statement` those functions proved against — see the
+/// comment there. Does not check the proof's program, inputs or output are
+/// any *specific* ones: `program_hash`/`input_hash`/`output_hash` stay the
+/// zero "no binding" sentinel until R3 wires real hashes through, so this
+/// only proves "some valid nox trace was executed under empty inputs", not
+/// that it computed the caller's claimed expression or result.
 #[cfg(feature = "prove")]
 pub fn verify_expr_proof(proof: &zheng::TraceProof) -> Result<(), LowerError> {
     let statement = zheng::Statement {
         program_hash: [0u8; 32],
         input_hash: [0u8; 32],
         output_hash: [0u8; 32],
-        focus_bound: u64::MAX,
+        focus_bound: 0,
+        bbg_root: [0u8; 32],
     };
     let params = zheng::ProofParams::default();
     zheng::verify(proof, &statement, &params)
@@ -377,7 +390,8 @@ pub fn prove_cond(
         program_hash: [0u8; 32],
         input_hash: [0u8; 32],
         output_hash: [0u8; 32],
-        focus_bound: tracer.0.len() as u64,
+        focus_bound: 0,
+        bbg_root: [0u8; 32],
     };
     let params = zheng::ProofParams::default();
     let proof = zheng::commit(&tracer, &[], &[], &[], &statement, &params)
