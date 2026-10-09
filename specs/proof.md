@@ -63,13 +63,13 @@ partition size rather than linear.
 
 a result set is certified by a batch [[lens]] opening over its rows together with
 the derivation circuit — one zheng proof, not one per row. a single-point read
-(one relation, one key) needs only a single Lens opening (~200 bytes); a complex
+(one relation, one key) needs only a single Lens opening; a complex
 query (join, sort, filter, recursion) compiles to the full CCS instance. either
 way verification is one decider.
 
 ## verification cost
 
-verification is constant — one zheng decider, ~5 μs, proof under ~10 KiB —
+verification is constant — one zheng decider —
 regardless of query complexity or graph size. complexity raises prover cost,
 which `inf cost` bounds (see [cost](cost.md)); it does not raise verifier cost.
 
