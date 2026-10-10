@@ -33,7 +33,7 @@ O(n) to run and to prove.
 ```
 cargo test                                  # core crates (value..cli) — pure stable Rust
 RUSTC_BOOTSTRAP=1 cargo test               # whole workspace incl. inf-lower (pulls nox)
-RUSTC_BOOTSTRAP=1 cargo test -p inf-lower --features prove  # R2 zheng proofs
+RUSTC_BOOTSTRAP=1 cargo test -p inf-lower --features prove  # R2 zheng v3 certificates
 cd oracle && RUSTC_BOOTSTRAP=1 cargo test  # differential oracle vs CozoDB (needs rs/cozo)
 ```
 
@@ -65,7 +65,7 @@ cargo run -p inf-cli -- cost query.inf    # now includes committed GraphStats ou
 | algorithms.md | complete | PageRank, DegreeCentrality, ClosenessCentrality, BetweennessCentrality (Brandes), ConnectedComponents, StronglyConnectedComponent, LabelPropagation, ClusteringCoefficients, CommunityDetectionLouvain (single-level greedy), BFS, DFS, ShortestPathBFS, ShortestPathDijkstra, ShortestPathAStar, KShortestPathYen, MinimumSpanningForestKruskal, TopSort, RandomWalk (committed seed). fractional metrics are fixed-point scaled (×10⁶, no float); `theta` is an integer percent. |
 | cost.md | mostly complete | `inf cost` reports a static estimate with reads/combine/recursion breakdown; uses committed `GraphStats` (node_count, diameter_bound, max_degree) when computed; recursion bound defaults to `diameter_bound`. |
 | ir.md | R1 complete | IR (strata) implemented; nox lowering covers arithmetic, comparisons, boolean connectives, column access, full relational scans + equi-joins + bounded-recursion trace via look (17) pattern (`nox_vm_scan`, `nox_vm_scan_gt`, `nox_vm_equijoin`, `nox_vm_bounded_reach`). LocalLookProvider serves LocalSource data; all differential-tested against reference eval. |
-| proof.md | R2 initial | `prove_expr` / `prove_cond` / `verify_expr_proof` via `--features prove`; pure arithmetic + comparison traces proved and verified with zheng (SuperSpartan + Brakedown, empty hash/look openings). operator table now has the ordered-aggregate row (sort + running accumulator composed — no new constraint form). Full query-level proof (with look openings against BBG root) pending R3 bbg integration. |
+| proof.md | R2 initial | `prove_expr` / `prove_cond` / `verify_expr_proof` via `--features prove`; pure arithmetic + comparison programs certified with zheng public profile v3 (exact check, witness disclosed, linear size; the earlier trace fold proved nothing). operator table now has the ordered-aggregate row (sort + running accumulator composed — no new constraint form). Full query-level proof (with look openings against BBG root) pending R3 bbg integration. |
 | extensions.md | complete | reactive (`:subscribe` + `eval_reactive` event driver) and live (`Host.fn(..)` witness via a host provider). |
 | bootstrap.md | stage 2+3 | parse→IR→eval is the working reference engine; stage 3 = condition lowering on real nox (R1 done); staged proof path (R2 done for expressions). cozo differential oracle wired (rs/oracle). |
 
@@ -112,9 +112,10 @@ cargo run -p inf-cli -- cost query.inf    # now includes committed GraphStats ou
   bbg dimensions (full columns) + committed `GraphStats` from a real `BbgState`;
   differential parity — `eval` over `BbgSource` == `eval` over a `LocalSource`
   mirror, for scan, filter, and multi-column queries (7 source + 3 lower tests).
-- `--features prove` (R2): `prove_expr` / `prove_cond` produce zheng
-  `TraceProof`s for arithmetic and comparison expressions; `verify_expr_proof`
-  checks them end-to-end via the SuperSpartan + Brakedown verifier.
+- `--features prove` (R2): `prove_expr` / `prove_cond` produce an `ExprProof`
+  (zheng public v3 statement + certificate) for arithmetic and comparison
+  expressions; `verify_expr_proof` recompiles the relation and checks it
+  exactly, returning the certified output.
 - reactive (`eval_reactive`) and live (`Host` witness) register tests.
 - the `inf` CLI runs the spec-example queries (discovery, policy, reachability,
   PageRank, mutation) end-to-end with correct results; `inf cost` reports

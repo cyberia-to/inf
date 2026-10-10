@@ -296,93 +296,105 @@ pub fn make_nox_ctx() -> inf_eval::Ctx {
     }
 }
 
-// ── R2: zheng proof generation ───────────────────────────────────────────────
+// ── R2: zheng execution certificates ─────────────────────────────────────────
+//
+// zheng public profile v3: the statement (program, public inputs and outputs,
+// cost, budget) plus the free witness positions; the verifier recompiles the
+// relation from the program and checks every row exactly. It discloses the
+// witness and is linear in size — a soundness floor, not a succinct or
+// zero-knowledge proof (zheng specs/execution.md). The 0.3.x trace fold used
+// here before (`zheng::commit`/`verify`) bound no statement — the old
+// `verify_expr_proof` checked a statement other than the one committed — so
+// it proved nothing.
 
-/// Prove that a closed expression evaluates to `result` on the nox VM.
-///
-/// Records the nox execution trace with `VecTrace`, then passes it to
-/// `zheng::commit` (SuperSpartan + Brakedown). Returns the result field value
-/// and the `TraceProof`. The proof can be checked with `verify_expr_proof`.
-///
-/// Requires the `prove` feature (`cargo build --features prove`).
+/// A checked claim that a lowered program evaluates to `statement.public_output`.
 #[cfg(feature = "prove")]
-pub fn prove_expr(t: &Term) -> Result<(u64, zheng::TraceProof), LowerError> {
-    use nox::VecTrace;
-    let mut o: Reduction<N> = Reduction::new();
-    let formula = lower_term(&mut o, t, &[])?;
-    let subject = o.atom(Goldilocks::new(0)).ok_or(LowerError::Arena)?;
-    let calls = nox::NullCalls;
-    let mut tracer = VecTrace::default();
-    let result_id = match reduce(&mut o, subject, formula, BUDGET, &calls, &mut tracer) {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExprProof {
+    pub statement: zheng::execution::ExecutionStatement,
+    pub certificate: zheng::execution::Certificate,
+}
+
+/// The arena noun as a zheng execution noun.
+#[cfg(feature = "prove")]
+fn execution_noun(o: &Reduction<N>, id: Order) -> Result<zheng::execution::ExecutionNoun, LowerError> {
+    use nox::data::Data;
+    use zheng::execution::ExecutionNoun::{Atom, Pair};
+    match o.get(id).ok_or(LowerError::Arena)?.inner {
+        Data::Atom { value } => Ok(Atom(value.as_u64())),
+        Data::Pair { left, right } => Ok(Pair(
+            Box::new(execution_noun(o, left)?),
+            Box::new(execution_noun(o, right)?),
+        )),
+    }
+}
+
+/// Run `formula` on `subject` natively, then certify `[2 [[1 subject] [1 formula]]]`
+/// (the same evaluation, closed over its subject) and check the two agree.
+#[cfg(feature = "prove")]
+fn certify(o: &mut Reduction<N>, subject: Order, formula: Order) -> Result<(u64, ExprProof), LowerError> {
+    use zheng::execution::ExecutionNoun::{Atom, Pair};
+    let program = {
+        let quote = |v| Pair(Box::new(Atom(1)), Box::new(v));
+        Pair(
+            Box::new(Atom(2)),
+            Box::new(Pair(
+                Box::new(quote(execution_noun(o, subject)?)),
+                Box::new(quote(execution_noun(o, formula)?)),
+            )),
+        )
+    };
+    let result_id = match reduce(o, subject, formula, BUDGET, &nox::NullCalls, &mut nox::NoTrace) {
         Outcome::Ok(id, _) => id,
         Outcome::Halt(_) => return Err(LowerError::Runtime("halted".into())),
         Outcome::Error(e) => return Err(LowerError::Runtime(format!("{e:?}"))),
     };
-    let g = o.atom_value(result_id).ok_or(LowerError::Runtime("non-atom result".into()))?;
-    let result = g.as_u64();
-
-    // Prove the trace. Pure arithmetic traces have no hash, axis, or look rows —
-    // pass empty slices. The Statement uses zero hashes (no BBG root binding yet;
-    // that arrives with R3 BbgSource integration).
-    let statement = zheng::Statement {
-        program_hash: [0u8; 32],
-        input_hash: [0u8; 32],
-        output_hash: [0u8; 32],
-        focus_bound: tracer.0.len() as u64,
-    };
-    let params = zheng::ProofParams::default();
-    let proof = zheng::commit(&tracer, &[], &[], &[], &statement, &params)
-        .map_err(|e| LowerError::Runtime(format!("zheng commit: {e:?}")))?;
-    Ok((result, proof))
+    let result = o.atom_value(result_id).ok_or(LowerError::Runtime("non-atom result".into()))?.as_u64();
+    let (statement, certificate) = zheng::execution::certify_execution(&program, &[], BUDGET)
+        .map_err(|e| LowerError::Runtime(format!("zheng certify: {e}")))?;
+    if statement.public_output != [result] {
+        return Err(LowerError::Runtime("certified output differs from native nox".into()));
+    }
+    Ok((result, ExprProof { statement, certificate }))
 }
 
-/// Verify a proof produced by `prove_expr`.
+/// Certify that a closed expression evaluates to `result` on the nox VM.
+///
+/// Returns the result field value and the [`ExprProof`]; check it with
+/// [`verify_expr_proof`]. Requires the `prove` feature.
 #[cfg(feature = "prove")]
-pub fn verify_expr_proof(proof: &zheng::TraceProof) -> Result<(), LowerError> {
-    let statement = zheng::Statement {
-        program_hash: [0u8; 32],
-        input_hash: [0u8; 32],
-        output_hash: [0u8; 32],
-        focus_bound: u64::MAX,
-    };
-    let params = zheng::ProofParams::default();
-    zheng::verify(proof, &statement, &params)
-        .map_err(|e| LowerError::Runtime(format!("zheng verify: {e:?}")))
+pub fn prove_expr(t: &Term) -> Result<(u64, ExprProof), LowerError> {
+    let mut o: Reduction<N> = Reduction::new();
+    let formula = lower_term(&mut o, t, &[])?;
+    let subject = o.atom(Goldilocks::new(0)).ok_or(LowerError::Arena)?;
+    certify(&mut o, subject, formula)
 }
 
-/// Prove that a condition holds for a tuple: run the condition on the nox VM,
-/// record the trace, and prove it via zheng.
+/// Verify an [`ExprProof`]: zheng recompiles the relation from the statement's
+/// program and checks the certificate exactly. Returns the certified output.
+#[cfg(feature = "prove")]
+pub fn verify_expr_proof(proof: &ExprProof) -> Result<u64, LowerError> {
+    zheng::execution::verify_certificate(&proof.statement, &proof.certificate)
+        .map_err(|e| LowerError::Runtime(format!("zheng verify: {e}")))?;
+    match proof.statement.public_output.as_slice() {
+        [v] => Ok(*v),
+        _ => Err(LowerError::Runtime("expression proof must output one atom".into())),
+    }
+}
+
+/// Certify whether a condition holds for a tuple (nox zero = true).
 #[cfg(feature = "prove")]
 pub fn prove_cond(
     cond: &inf_ast::Call,
     col_names: &[String],
     tuple: &[i64],
-) -> Result<(bool, zheng::TraceProof), LowerError> {
-    use nox::VecTrace;
+) -> Result<(bool, ExprProof), LowerError> {
     let t = Term::Call(Box::new(cond.clone()));
     let mut o: Reduction<N> = Reduction::new();
     let formula = lower_term(&mut o, &t, col_names)?;
     let subject = tuple_data(&mut o, tuple)?;
-    let calls = nox::NullCalls;
-    let mut tracer = VecTrace::default();
-    let result_id = match reduce(&mut o, subject, formula, BUDGET, &calls, &mut tracer) {
-        Outcome::Ok(id, _) => id,
-        Outcome::Halt(_) => return Err(LowerError::Runtime("halted".into())),
-        Outcome::Error(e) => return Err(LowerError::Runtime(format!("{e:?}"))),
-    };
-    let g = o.atom_value(result_id).ok_or(LowerError::Runtime("non-atom result".into()))?;
-    let holds = g.as_u64() == 0;
-
-    let statement = zheng::Statement {
-        program_hash: [0u8; 32],
-        input_hash: [0u8; 32],
-        output_hash: [0u8; 32],
-        focus_bound: tracer.0.len() as u64,
-    };
-    let params = zheng::ProofParams::default();
-    let proof = zheng::commit(&tracer, &[], &[], &[], &statement, &params)
-        .map_err(|e| LowerError::Runtime(format!("zheng commit: {e:?}")))?;
-    Ok((holds, proof))
+    let (value, proof) = certify(&mut o, subject, formula)?;
+    Ok((value == 0, proof))
 }
 
 // ── R1b: relational scan and join via nox look pattern ───────────────────────
@@ -1124,32 +1136,38 @@ mod tests {
         assert_eq!(nox_reached, ref_nodes, "nox 2-hop reach vs reference :bounded 3");
     }
 
-    // ── R2: zheng proof tests ─────────────────────────────────────────────────
+    // ── R2: zheng certificate tests ───────────────────────────────────────────
 
     #[cfg(feature = "prove")]
     #[test]
     fn prove_and_verify_arithmetic_expr() {
-        // Prove that (6 * 7) = 42 on the nox VM.
+        // Certify that (6 * 7) = 42 on the nox VM.
         let t = call("mul", int(6), int(7));
         let (result, proof) = prove_expr(&t).expect("prove");
         assert_eq!(result, 42, "nox computes 6*7=42");
-        verify_expr_proof(&proof).expect("verify");
+        assert_eq!(verify_expr_proof(&proof).expect("verify"), 42);
+        let mut forged = proof.clone();
+        forged.statement.public_output[0] = 43;
+        assert!(verify_expr_proof(&forged).is_err(), "a false result does not verify");
     }
 
     #[cfg(feature = "prove")]
     #[test]
     fn prove_and_verify_condition() {
-        // Prove that lt(3, 5) holds (3 < 5).
+        // Certify that lt(3, 5) holds (3 < 5).
         let c = inf_ast::Call { sibling: None, func: "lt".into(), args: vec![int(3), int(5)] };
         let (holds, proof) = prove_cond(&c, &[], &[]).expect("prove");
         assert!(holds, "3 < 5 should hold");
-        verify_expr_proof(&proof).expect("verify");
+        assert_eq!(verify_expr_proof(&proof).expect("verify"), 0);
+        let mut forged = proof.clone();
+        forged.statement.public_output[0] = 1;
+        assert!(verify_expr_proof(&forged).is_err(), "cannot flip the verdict");
     }
 
     #[cfg(feature = "prove")]
     #[test]
     fn prove_and_verify_tuple_condition() {
-        // Prove that gt(weight, 10) holds for weight=15.
+        // Certify that gt(weight, 10) holds for weight=15, and not for weight=5.
         let weight = Term::Var("weight".into());
         let c = inf_ast::Call {
             sibling: None,
@@ -1160,6 +1178,12 @@ mod tests {
         let (holds, proof) = prove_cond(&c, &cols, &[15]).expect("prove");
         assert!(holds, "15 > 10 should hold");
         verify_expr_proof(&proof).expect("verify");
+        let (holds, low) = prove_cond(&c, &cols, &[5]).expect("prove");
+        assert!(!holds, "5 > 10 should not hold");
+        verify_expr_proof(&low).expect("verify");
+        let mut forged = low.clone();
+        forged.statement.public_output = proof.statement.public_output.clone();
+        assert!(verify_expr_proof(&forged).is_err(), "the tuple is bound");
     }
 }
 
