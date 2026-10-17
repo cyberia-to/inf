@@ -102,11 +102,14 @@ the real nox VM against a LocalLookProvider, differential-tested vs reference.
 
 ### R2a — expression/condition proof  (DONE 2026-06-07)
 
-- `prove_expr(t)` → `(result, TraceProof)`: runs the expression with VecTrace,
-  calls `zheng::commit` with empty hash/axis/look openings (pure arithmetic).
-- `prove_cond(cond, cols, tuple)` → `(holds, TraceProof)`: proves a condition
-  evaluation over a specific tuple.
-- `verify_expr_proof(proof)`: verifies via `zheng::verify`.
+- 2026-10-09: moved off zheng's legacy trace fold (it bound no statement;
+  the old verify checked a different statement than the one committed) to
+  zheng public profile v3.
+- `prove_expr(t)` → `(result, ExprProof)`: runs the expression natively and
+  certifies `[2 [[1 subject] [1 formula]]]` with `certify_execution`.
+- `prove_cond(cond, cols, tuple)` → `(holds, ExprProof)`: the same over a tuple
+  subject.
+- `verify_expr_proof(proof)` → certified output, via `verify_certificate`.
 - tests: prove_and_verify_arithmetic_expr, prove_and_verify_condition,
   prove_and_verify_tuple_condition (3 tests under `--features prove`).
 - gated: `inf-lower/Cargo.toml [features] prove = ["dep:zheng", "nox/brakedown"]`.

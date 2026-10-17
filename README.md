@@ -13,7 +13,7 @@ inf is the query-and-mutation language of the cybergraph — proof language #10 
 14. you write what you want to know, or what you want the graph to become; inf
 returns the result, or commits the change, with a [[zheng]] proof that it follows
 from the graph's committed state. a light client holding only the 32-byte graph
-root checks that proof in microseconds — without storing the graph, without
+root checks that proof — without storing the graph, without
 trusting whoever ran it.
 
 two things, both set-based, both proven.

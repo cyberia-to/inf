@@ -111,6 +111,6 @@ execution, not costed at runtime.
 
 `inf cost` reports execution cycles. proof size and verification time follow the
 [[zheng]] cost model over the lowered [[nox]] trace and are reported by the
-proof path (see proof). verification is constant (~5 μs, one decider) regardless
+proof path (see proof). verification is constant (one decider) regardless
 of query complexity; query complexity affects prover cost, which the cycle
 ceiling bounds.

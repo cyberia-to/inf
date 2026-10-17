@@ -227,6 +227,43 @@ fn fixed_rule_pagerank_deterministic_and_positive() {
     assert_eq!(run(q).rows, out.rows);
 }
 
+/// theta is a query-supplied `i64` (specs/algorithms.md documents it as an
+/// integer percent); out of 0..=100 it must be rejected, not fed into the
+/// fixed-point arithmetic where it can overflow (theta * PR_SCALE) or wrap
+/// silently in a release build.
+#[test]
+fn fixed_rule_pagerank_rejects_theta_out_of_range() {
+    let ir = |q: &str| {
+        let prog = inf_parse::parse(q).expect("parse");
+        inf_plan::plan(&prog).expect("plan")
+    };
+    for theta in [-1i64, 101, 999_999_999_999_999] {
+        let q = format!(
+            "edges[from, to] := axons{{from, to}}\n?[node, rank] <~ PageRank(edges[], theta: {theta}, iters: 5)"
+        );
+        let err = eval(&ir(&q), &fixture(), &Ctx::default()).expect_err("theta out of range");
+        assert!(err.msg.contains("theta"), "unexpected message: {}", err.msg);
+    }
+}
+
+/// iters is likewise query-supplied and otherwise unbounded: trident
+/// constraint 1 requires a static iteration cap, not a data-dependent loop
+/// a query can blow past to hang the evaluator.
+#[test]
+fn fixed_rule_pagerank_rejects_iters_out_of_range() {
+    let ir = |q: &str| {
+        let prog = inf_parse::parse(q).expect("parse");
+        inf_plan::plan(&prog).expect("plan")
+    };
+    for iters in [-1i64, 10_001, 999_999_999_999_999] {
+        let q = format!(
+            "edges[from, to] := axons{{from, to}}\n?[node, rank] <~ PageRank(edges[], iters: {iters})"
+        );
+        let err = eval(&ir(&q), &fixture(), &Ctx::default()).expect_err("iters out of range");
+        assert!(err.msg.contains("iters"), "unexpected message: {}", err.msg);
+    }
+}
+
 #[test]
 fn fixed_rule_mst_and_astar_and_yen() {
     // MST of the (tree) fixture: all 4 edges, total weight 10+5+2+1 = 18
@@ -275,6 +312,32 @@ fn fixed_rule_random_walk_seeded_deterministic() {
     let out = run(q);
     assert!(!out.rows.is_empty());
     assert_eq!(run(q).rows, out.rows, "seeded walk is deterministic");
+}
+
+/// `iters`/`steps`/`times`/`k` are query-supplied `i64`s with no bound of
+/// their own; each drives a loop whose cost is otherwise unbounded (trident
+/// constraint 1 requires a fixed round count, not a data-dependent one). An
+/// out-of-range value must be rejected, not accepted into a hang.
+#[test]
+fn fixed_rule_rejects_out_of_range_loop_counts() {
+    let ir = |q: &str| {
+        let prog = inf_parse::parse(q).expect("parse");
+        inf_plan::plan(&prog).expect("plan")
+    };
+    let cases = [
+        ("edges[from, to] := axons{from, to}\n?[node, x] <~ LabelPropagation(edges[], iters: 999999999999)", "iters"),
+        ("edges[from, to] := axons{from, to}\n?[node, x] <~ LabelPropagation(edges[], iters: -1)", "iters"),
+        ("edges[from, to] := axons{from, to}\n?[node, v] <~ RandomWalk(edges[], #seed, steps: 999999999999, times: 1)", "steps"),
+        ("edges[from, to] := axons{from, to}\n?[node, v] <~ RandomWalk(edges[], #seed, steps: 5, times: 999999999999)", "times"),
+        (
+            "edges[from, to, w] := axons{from, to, weight_sum: w}\n?[path, cost] <~ KShortestPathYen(edges[], #seed, #c, k: 999999999999)",
+            "k",
+        ),
+    ];
+    for (q, param) in cases {
+        let err = eval(&ir(q), &fixture(), &Ctx::default()).expect_err(&format!("{param} out of range"));
+        assert!(err.msg.contains(param), "unexpected message for {param}: {}", err.msg);
+    }
 }
 
 #[test]
