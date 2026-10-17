@@ -1212,9 +1212,9 @@ mod bbg_diff_tests {
     /// A committed state with three neurons of distinct focus values.
     fn seeded_state() -> BbgState {
         let mut st = BbgState::new();
-        st.neurons.insert(nid(1), NeuronRecord { focus: 100, karma: 1, stake: 0 });
-        st.neurons.insert(nid(2), NeuronRecord { focus: 5_000, karma: 2, stake: 0 });
-        st.neurons.insert(nid(3), NeuronRecord { focus: 9_000, karma: 3, stake: 0 });
+        st.neurons.insert(nid(1), NeuronRecord { focus: 100, karma: 1, stake: 0, nonce: 0 });
+        st.neurons.insert(nid(2), NeuronRecord { focus: 5_000, karma: 2, stake: 0, nonce: 0 });
+        st.neurons.insert(nid(3), NeuronRecord { focus: 9_000, karma: 3, stake: 0, nonce: 0 });
         st
     }
 
