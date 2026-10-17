@@ -8,7 +8,7 @@ crystal-domain: cyber
 inf is the language of a provable graph. you ask the [[cybergraph]] a question
 and get an answer; you state a change and the graph takes it. both come with a
 [[zheng]] proof that the result follows from the graph's committed state, and
-anyone holding the 32-byte graph root checks that proof in microseconds — without
+anyone holding the 32-byte graph root checks that proof — without
 the graph, without trusting the node that ran it.
 
 it is the read-write interface to shared, authenticated knowledge, with proof in
