@@ -101,9 +101,10 @@ impl<'a> RelationSource for BbgSource<'a> {
                 vec![Value::hash(*k), Value::Bool(v.available), w(v.chunk_count as u64)]
             })),
             "time" => Box::new(s.time.iter().map(|(h, root)| vec![w(*h), Value::hash(*root)])),
-            "signals" => Box::new(s.signals.iter().map(|(step, v)| {
+            // keyed by bbg::signal_key(neuron, step); the step is in the record
+            "signals" => Box::new(s.signals.iter().map(|(_, v)| {
                 vec![
-                    w(*step),
+                    w(v.step),
                     Value::neuron(v.neuron),
                     w(v.link_count as u64),
                     w(v.block_height),
@@ -152,7 +153,7 @@ mod tests {
     /// one time snapshot.
     fn seeded_state() -> BbgState {
         let mut s = BbgState::new();
-        s.neurons.insert(particle(1), NeuronRecord { focus: 50_000, karma: 7, stake: 0 });
+        s.neurons.insert(particle(1), NeuronRecord { focus: 50_000, karma: 7, stake: 0, nonce: 0 });
         let sig = Signal {
             neuron: particle(1),
             links: vec![Cyberlink {
@@ -219,6 +220,33 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0][0], Value::Word(0)); // height
         assert_eq!(rows[0][1], Value::hash(particle(99))); // root snapshot
+    }
+
+    /// Two neurons' first signals are both step 0: the signals relation has a
+    /// row for each, with the step read from the record (bbg keys the
+    /// dimension by H(neuron ‖ step)).
+    #[test]
+    fn scan_signals_keeps_every_neuron_step() {
+        let mut st = BbgState::new();
+        for seed in [1u8, 2] {
+            st.apply_signal_record(bbg::types::SignalRecord {
+                neuron: particle(seed),
+                network: particle(9),
+                link_count: 1,
+                block_height: 5,
+                proof_hash: particle(8),
+                step: 0,
+            });
+        }
+        let src = BbgSource::new(&st);
+        let mut rows: Vec<Tuple> = src.scan("signals").collect();
+        rows.sort_by(|a, b| format!("{:?}", a[1]).cmp(&format!("{:?}", b[1])));
+        assert_eq!(rows.len(), 2);
+        for (row, seed) in rows.iter().zip([1u8, 2]) {
+            assert_eq!(row[0], Value::Word(0));
+            assert_eq!(row[1], Value::neuron(particle(seed)));
+            assert_eq!(row[3], Value::Word(5));
+        }
     }
 
     #[test]
